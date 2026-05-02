@@ -1,0 +1,42 @@
+{
+    "name": "github-notifier-genesis",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/app.ts",
+        "build": "tsc",
+        "start": "node dist/app.js",
+        "migrate": "ts-node src/database/migrate.ts",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "lint": "eslint src"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "dependencies": {
+        "@fastify/postgres": "^6.0.2",
+        "@fastify/rate-limit": "^10.3.0",
+        "@fastify/static": "^9.1.0",
+        "dotenv": "^17.4.1",
+        "fastify": "^5.8.4",
+        "fastify-plugin": "^5.1.0",
+        "nodemailer": "^8.0.5",
+        "pg": "^8.20.0",
+        "resend": "^6.10.0"
+    },
+    "devDependencies": {
+        "@types/node": "^25.5.2",
+        "@types/nodemailer": "^8.0.0",
+        "@types/pg": "^8.20.0",
+        "@typescript-eslint/eslint-plugin": "^8.58.1",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-prettier": "^5.5.5",
+        "nodemon": "^3.1.14",
+        "ts-node": "^10.9.2",
+        "typescript": "^6.0.2",
+        "vitest": "^4.1.4"
+    }
+}
