@@ -10,7 +10,8 @@
         "migrate": "ts-node src/database/migrate.ts",
         "test": "vitest run",
         "test:watch": "vitest",
-        "lint": "eslint src"
+        "lint": "eslint src",
+        "lint:fix": "eslint src --fix"
     },
     "keywords": [],
     "author": "",

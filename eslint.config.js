@@ -5,16 +5,21 @@ import prettierConfig from 'eslint-config-prettier';
 const tsconfigRootDir = import.meta.dirname;
 
 export default [
-    // ── 1. Global ignores ────────────────────────────────────────────────────
+    // ── 1. Global ignores
+    // ────────────────────────────────────────────────────
     {
-        ignores: ['dist/**', 'node_modules/**', 'eslint.config.js', 'src/**/_tests/**'],
+        ignores: ['dist/**', 'node_modules/**', 'eslint.config.js'],
     },
 
-    // ── 2. TypeScript — .ts files ────────────────────────────────────────────
+    // ── 2. TypeScript — recommended rules for .ts files
+    // ────────────────────────────────────────────────────
     ...tsPlugin.configs['flat/recommended'].map((config) => ({
         ...config,
         files: ['**/*.ts'],
     })),
+
+    // ── 3. TypeScript — project-aware rules
+    // ───────────────────────────────────────────────
     {
         files: ['**/*.ts'],
         languageOptions: {
@@ -27,11 +32,11 @@ export default [
         },
     },
 
-    // ── 6. All files — Prettier + project rules ───────────────────────────────
+    // ── 4. All files — Prettier + project rules
+    // ───────────────────────────────────────────────
     {
         files: ['**/*.{js,ts}'],
         plugins: {
-            '@typescript-eslint': tsPlugin,
             prettier: prettierPlugin,
         },
         rules: {
@@ -40,7 +45,8 @@ export default [
             'arrow-body-style': 'off',
             'prefer-arrow-callback': 'off',
 
-            // ── General ──────────────────────────────────────────────────────
+            // ── General
+            // ────────────────────────────
             'no-console': 'error',
             'no-debugger': 'error',
             'no-var': 'error',
@@ -49,8 +55,6 @@ export default [
             curly: ['error', 'all'],
             'no-duplicate-imports': 'error',
             'no-useless-return': 'error',
-            'no-return-await': 'error',
-            'no-throw-literal': 'error',
             'prefer-template': 'error',
             'object-shorthand': ['error', 'always'],
             'no-unused-vars': 'off',
@@ -61,7 +65,8 @@ export default [
         },
     },
 
-    // ── 8. TypeScript — type-aware rules ───────────────────────────────
+    // ── 5. TypeScript — all rules
+    // ───────────────────────────────────────────────
     {
         files: ['**/*.{ts}'],
         plugins: {
