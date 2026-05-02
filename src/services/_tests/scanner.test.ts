@@ -9,6 +9,7 @@ vi.mock('../github.ts', () => ({
 import { getLatestRelease } from '../github.ts';
 import { runScanCycle } from '../scanner.ts';
 import type { FastifyInstance } from 'fastify';
+import type { GitHubRelease } from '../../types/index.ts';
 
 const mockGetLatestRelease = vi.mocked(getLatestRelease);
 
@@ -39,7 +40,7 @@ describe('runScanCycle', () => {
     });
 
     it('does NOT notify when tag is unchanged', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease);
 
         const fastify = buildFastify([
             { rows: [{ id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
@@ -57,7 +58,7 @@ describe('runScanCycle', () => {
     });
 
     it('notifies all confirmed subscribers when new release detected', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
 
         const fastify = buildFastify([
             { rows: [{ id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
@@ -78,7 +79,7 @@ describe('runScanCycle', () => {
     });
 
     it('updates last_seen_tag in repositories after notifying', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
 
         const fastify = buildFastify([
             { rows: [{ id: 7, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
@@ -98,7 +99,7 @@ describe('runScanCycle', () => {
     });
 
     it('UPDATE happens before emails, not after', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
 
         const callOrder: string[] = [];
         const queryResponses: unknown[] = [
@@ -133,7 +134,7 @@ describe('runScanCycle', () => {
     it('aborts scan cycle when any repo in a batch hits the rate limit', async () => {
         mockGetLatestRelease
             .mockRejectedValueOnce(new Error('GitHub API error: 429'))
-            .mockResolvedValueOnce({ tag_name: 'v3.0.0' } as any);
+            .mockResolvedValueOnce({ tag_name: 'v3.0.0' } as GitHubRelease);
 
         const fastify = buildFastify([
             {

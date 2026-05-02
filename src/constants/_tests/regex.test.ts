@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EMAIL_REGEX, REPO_REGEX } from '../regex';
+import { EMAIL_REGEX, REPO_REGEX } from '../regex.ts';
 
 describe('REPO_REGEX', () => {
     it('accepts simple owner/repo', () => {

@@ -25,6 +25,7 @@ vi.mock('../../services/subscription.ts', () => {
 import { getLatestRelease } from '../../services/github.ts';
 import { subscribe, AlreadySubscribedError } from '../../services/subscription.ts';
 import routes from '../subscription.ts';
+import type { GitHubRelease } from '../../types/index.ts';
 
 const mockGetLatestRelease = vi.mocked(getLatestRelease);
 const mockSubscribe = vi.mocked(subscribe);
@@ -48,7 +49,7 @@ beforeEach(() => {
 
 describe('POST /api/subscribe', () => {
     it('responds 409 and does not send email when already subscribed', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease);
         mockSubscribe.mockRejectedValue(new AlreadySubscribedError());
 
         const mockSendConfirmationEmail = vi.fn().mockResolvedValue(undefined);
@@ -82,7 +83,7 @@ describe('POST /api/subscribe', () => {
     });
 
     it('responds 500 when email sending fails (subscribe rolls back and throws)', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as any);
+        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease);
 
         const smtpError = new Error('SMTP connection refused');
         mockSubscribe.mockRejectedValue(smtpError);
