@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getLatestRelease } from '../github';
+import { getLatestRelease } from '../github.ts';
 
 let mockFetch: ReturnType<typeof vi.fn>;
 

@@ -10,6 +10,5 @@
         "esModuleInterop": true,
         "rewriteRelativeImportExtensions": true
     },
-    "include": ["src"],
-    "exclude": ["src/**/_tests"]
+    "include": ["src"]
 }
