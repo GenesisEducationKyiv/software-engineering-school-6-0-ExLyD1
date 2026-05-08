@@ -89,11 +89,13 @@ graph TD
     GW --> APIService[API Service]
 
     GitHubAPI[GitHub API] --> ScannerService
+    GitHubAPI --> SubscriptionService
     ScannerService --> Notifier[Notifier]
+    SubscriptionService --> Notifier
     Notifier --> ResendAPI[Resend API]
 
-    SubscriptionService --> DB[(PostgreSQL)]
     ScannerService --> DB
+    SubscriptionService --> DB[(PostgreSQL)]
     APIService --> DB
 ```
 
