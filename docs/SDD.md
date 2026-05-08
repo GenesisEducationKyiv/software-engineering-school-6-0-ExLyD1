@@ -84,19 +84,19 @@ Users, які хочуть слідкувати за новими releases ві�
 
 ```mermaid
 graph TD
-    GW[Backend API] --> SubscriptionService[Subscription Service]
+    GW[Backend API] --> APIService[API Routes]
     GW --> ScannerService[Scanner Service]
-    GW --> APIService[API Service]
 
-    GitHubAPI[GitHub API] --> ScannerService
-    GitHubAPI --> SubscriptionService
-    ScannerService --> Notifier[Notifier]
-    SubscriptionService --> Notifier
+    APIService --> SubscriptionService[Subscription Service]
+    APIService --> GitHubAPI[GitHub API]
+    APIService --> Notifier[Notifier]
+
+    ScannerService --> GitHubAPI
+    ScannerService --> Notifier
+    ScannerService --> DB[(PostgreSQL)]
+
+    SubscriptionService --> DB
     Notifier --> ResendAPI[Resend API]
-
-    ScannerService --> DB
-    SubscriptionService --> DB[(PostgreSQL)]
-    APIService --> DB
 ```
 
 ---
