@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { EMAIL_REGEX, UUID_REGEX, REPO_REGEX } from '../constants/regex.ts';
-import { getLatestRelease } from '../services/github.ts';
 import {
     subscribe,
     confirmSubscription,
@@ -32,9 +31,8 @@ async function routes(fastify: FastifyInstance) {
 
             let latestRelease;
             try {
-                latestRelease = await getLatestRelease(repo);
+                latestRelease = await fastify.github.getLatestRelease(repo);
             } catch (err) {
-                // I know that in swagger it is not any 429 error, but it is just my own decision to add
                 if (err instanceof Error && err.message.includes('GitHub API error: 429')) {
                     return reply
                         .status(429)
@@ -49,7 +47,7 @@ async function routes(fastify: FastifyInstance) {
             }
 
             try {
-                await subscribe(fastify, email, repo, latestRelease.tag_name, (token) =>
+                await subscribe(fastify.pg, email, repo, latestRelease.tag_name, (token) =>
                     fastify.mailer.sendConfirmationEmail(email, token),
                 );
             } catch (err) {
@@ -76,7 +74,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const found = await confirmSubscription(fastify, token);
+            const found = await confirmSubscription(fastify.pg, token);
             if (!found) {
                 return reply.status(404).send({ error: 'Token not found' });
             }
@@ -95,7 +93,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const found = await deleteSubscription(fastify, token);
+            const found = await deleteSubscription(fastify.pg, token);
             if (!found) {
                 return reply.status(404).send({ error: 'Token not found' });
             }
@@ -113,7 +111,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const items = await getSubscriptionsByEmail(fastify, email);
+            const items = await getSubscriptionsByEmail(fastify.pg, email);
             return reply.status(200).send(items);
         } catch (err) {
             fastify.log.error({ err }, 'GET /api/subscriptions: database error');
@@ -122,5 +120,4 @@ async function routes(fastify: FastifyInstance) {
     });
 }
 
-//ESM
 export default routes;

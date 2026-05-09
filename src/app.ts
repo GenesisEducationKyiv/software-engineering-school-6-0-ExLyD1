@@ -4,30 +4,24 @@ import fastifyStatic from '@fastify/static';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import subscriptionRoutes from './api/subscription.ts';
+import dotenv from 'dotenv';
+import { loadConfig } from './config.ts';
+import subscriptionRoutes from './controllers/subscription.ts';
 import dbConnector from './plugins/db.ts';
 import mailerConnector from './plugins/mailer.ts';
-import dotenv from 'dotenv';
+import githubConnector from './plugins/github.ts';
 import { runMigrations } from './database/migrate.ts';
-import { startScanner } from './services/index.ts';
+import { startScanner } from './services/scanner.ts';
 
 dotenv.config();
 
-const REQUIRED_ENV_VARS = [
-    'DATABASE_URL',
-    'GITHUB_BASE_URL',
-    'RESEND_API_KEY',
-    'SMTP_FROM',
-    'BASE_URL',
-    'API_KEY',
-] as const;
-
-for (const key of REQUIRED_ENV_VARS) {
-    if (!process.env[key]) {
-        // eslint-disable-next-line no-console
-        console.error(`Missing required env var: ${key}`);
-        process.exit(1);
-    }
+let config;
+try {
+    config = loadConfig();
+} catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
 }
 
 const publicPaths = new Set([
@@ -38,26 +32,15 @@ const publicPaths = new Set([
     '/',
 ]);
 
-const SCANNER_INTERVAL_MS = parseInt(process.env.SCANNER_INTERVAL_MS ?? '', 10);
-if (isNaN(SCANNER_INTERVAL_MS)) {
-    // eslint-disable-next-line no-console
-    console.error(
-        'Missing or invalid env var: SCANNER_INTERVAL_MS must be a valid integer (milliseconds)',
-    );
-    process.exit(1);
-}
-
-const PORT = process.env.PORT || 3000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const fastify = Fastify({
-    logger: true,
-});
+const fastify = Fastify({ logger: true });
 
 fastify.register(fastifyRateLimit, { global: false });
 
-fastify.register(dbConnector);
-fastify.register(mailerConnector);
+fastify.register(dbConnector, config);
+fastify.register(mailerConnector, config);
+fastify.register(githubConnector, config);
 fastify.register(subscriptionRoutes);
 
 fastify.register(fastifyStatic, {
@@ -99,7 +82,7 @@ fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
     }
 
     const headersApiKey = String(request.headers['x-api-key'] ?? '');
-    if (headersApiKey !== process.env.API_KEY) {
+    if (headersApiKey !== config.apiKey) {
         request.log?.warn({ ip: request.ip, path }, 'Unauthorized request');
         return reply.status(401).send({ error: 'Unauthorized' });
     }
@@ -107,11 +90,24 @@ fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
 
 fastify.addHook('onReady', async () => {
     await runMigrations(fastify);
-    startScanner(fastify, SCANNER_INTERVAL_MS);
+
+    const timer = startScanner(
+        fastify.pg,
+        fastify.github,
+        fastify.mailer,
+        fastify.log,
+        config.scannerIntervalMs,
+    );
+
+    fastify.addHook('onClose', async () => {
+        clearInterval(timer);
+        fastify.log.info('Scanner: stopped');
+    });
+
+    fastify.log.info(`Scanner: started, interval ${config.scannerIntervalMs / 1000}s`);
 });
 
-// Run the server!
-fastify.listen({ port: Number(PORT), host: '0.0.0.0' }, function (err) {
+fastify.listen({ port: config.port, host: '0.0.0.0' }, function (err) {
     if (err) {
         fastify.log.error(err);
         process.exit(1);
