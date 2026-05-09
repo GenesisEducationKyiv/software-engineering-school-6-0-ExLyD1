@@ -1,5 +1,4 @@
 import type { Resend } from 'resend';
-import type { FastifyBaseLogger } from 'fastify';
 import type { Mailer } from '../types/index.ts';
 
 export const createMailer = (resend: Resend, baseUrl: string, from: string): Mailer => {
@@ -21,7 +20,6 @@ export const createMailer = (resend: Resend, baseUrl: string, from: string): Mai
         repo: string,
         tagName: string,
         unsubscribeToken: string,
-        log?: FastifyBaseLogger,
     ): Promise<void> => {
         const { error } = await resend.emails.send({
             from,
@@ -31,9 +29,8 @@ export const createMailer = (resend: Resend, baseUrl: string, from: string): Mai
         });
 
         if (error) {
-            log?.error(
-                { err: error },
-                `Notifier: failed to send release notification to ${email} (repo: ${repo}): ${error.message}`,
+            throw new Error(
+                `Failed to send release notification to ${email} (repo: ${repo}): ${error.message}`,
             );
         }
     };
