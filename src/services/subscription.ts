@@ -1,64 +1,29 @@
-import type { FastifyInstance } from 'fastify';
-import type { Repository, Subscription, SubscriptionRow, User } from '../types/index.ts';
+import type { DbPool, SubscriptionRow } from '../types/index.ts';
+import {
+    upsertUser,
+    upsertRepository,
+    insertSubscription,
+    confirmSubscription as repoConfirmSubscription,
+    deleteSubscription as repoDeleteSubscription,
+    getSubscriptionsByEmail as repoGetByEmail,
+} from '../repositories/subscription.repository.ts';
 
-export class AlreadySubscribedError extends Error {
-    constructor() {
-        super('Email already subscribed to this repository');
-    }
-}
+export { AlreadySubscribedError } from '../repositories/subscription.repository.ts';
 
 export const subscribe = async (
-    fastify: FastifyInstance,
+    db: DbPool,
     email: string,
     repo: string,
     lastSeenTag: string,
     onBeforeCommit: (confirmToken: string) => Promise<void>,
 ): Promise<string> => {
-    const client = await fastify.pg.connect();
+    const client = await db.connect();
     try {
         await client.query('BEGIN');
 
-        await client.query(`INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING`, [
-            email,
-        ]);
-
-        const userResult = await client.query<Pick<User, 'id'>>(
-            `SELECT id FROM users WHERE email = $1`,
-            [email],
-        );
-        const userId = userResult.rows[0].id;
-
-        await client.query(
-            `INSERT INTO repositories (owner_repo, last_seen_tag) VALUES ($1, $2) ON CONFLICT (owner_repo) DO NOTHING`,
-            [repo, lastSeenTag],
-        );
-
-        const repoResult = await client.query<Pick<Repository, 'id'>>(
-            `SELECT id FROM repositories WHERE owner_repo = $1`,
-            [repo],
-        );
-        const repoId = repoResult.rows[0].id;
-
-        const confirmToken = crypto.randomUUID();
-        const unsubscribeToken = crypto.randomUUID();
-
-        try {
-            await client.query(
-                `INSERT INTO subscriptions (user_id, repository_id, confirm_token, unsubscribe_token)
-                 VALUES ($1, $2, $3, $4)`,
-                [userId, repoId, confirmToken, unsubscribeToken],
-            );
-        } catch (err: unknown) {
-            if (
-                err &&
-                typeof err === 'object' &&
-                'code' in err &&
-                (err as { code: string }).code === '23505'
-            ) {
-                throw new AlreadySubscribedError();
-            }
-            throw err;
-        }
+        const userId = await upsertUser(client, email);
+        const repoId = await upsertRepository(client, repo, lastSeenTag);
+        const { confirmToken } = await insertSubscription(client, userId, repoId);
 
         await onBeforeCommit(confirmToken);
         await client.query('COMMIT');
@@ -71,39 +36,13 @@ export const subscribe = async (
     }
 };
 
-export const confirmSubscription = async (
-    fastify: FastifyInstance,
-    token: string,
-): Promise<boolean> => {
-    const result = await fastify.pg.query<Subscription>(
-        `UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1 RETURNING *`,
-        [token],
-    );
-    return (result.rowCount ?? 0) > 0;
-};
+export const confirmSubscription = async (db: DbPool, token: string): Promise<boolean> =>
+    repoConfirmSubscription(db, token);
 
-export const deleteSubscription = async (
-    fastify: FastifyInstance,
-    token: string,
-): Promise<boolean> => {
-    const result = await fastify.pg.query<Subscription>(
-        `DELETE FROM subscriptions WHERE unsubscribe_token = $1 RETURNING *`,
-        [token],
-    );
-    return (result.rowCount ?? 0) > 0;
-};
+export const deleteSubscription = async (db: DbPool, token: string): Promise<boolean> =>
+    repoDeleteSubscription(db, token);
 
 export const getSubscriptionsByEmail = async (
-    fastify: FastifyInstance,
+    db: DbPool,
     email: string,
-): Promise<SubscriptionRow[]> => {
-    const result = await fastify.pg.query<SubscriptionRow>(
-        `SELECT u.email, r.owner_repo AS repo, s.confirmed, r.last_seen_tag
-         FROM subscriptions s
-         JOIN users u ON u.id = s.user_id
-         JOIN repositories r ON r.id = s.repository_id
-         WHERE u.email = $1`,
-        [email],
-    );
-    return result.rows;
-};
+): Promise<SubscriptionRow[]> => repoGetByEmail(db, email);
