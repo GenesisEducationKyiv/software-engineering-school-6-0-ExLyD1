@@ -5,6 +5,5 @@ export interface Mailer {
         repo: string,
         tag: string,
         unsubscribeToken: string,
-        log?: import('fastify').FastifyBaseLogger,
     ) => Promise<void>;
 }
