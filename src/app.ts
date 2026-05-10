@@ -1,5 +1,5 @@
 // ESM
-import Fastify, { type FastifyRequest, type FastifyError } from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { dirname, join } from 'node:path';
@@ -7,9 +7,11 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { loadConfig } from './config.ts';
 import subscriptionRoutes from './controllers/subscription.ts';
+import healthRoutes from './controllers/health.ts';
 import dbConnector from './plugins/db.ts';
 import mailerConnector from './plugins/mailer.ts';
 import githubConnector from './plugins/github.ts';
+import authPlugin from './plugins/auth.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './services/scanner.ts';
 
@@ -24,14 +26,6 @@ try {
     process.exit(1);
 }
 
-const publicPaths = new Set([
-    '/api/subscriptions',
-    '/api/confirm',
-    '/api/unsubscribe',
-    '/health',
-    '/',
-]);
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const fastify = Fastify({ logger: true });
@@ -41,23 +35,15 @@ fastify.register(fastifyRateLimit, { global: false });
 fastify.register(dbConnector, config);
 fastify.register(mailerConnector, config);
 fastify.register(githubConnector, config);
+fastify.register(authPlugin, config);
 fastify.register(subscriptionRoutes);
+fastify.register(healthRoutes);
 
 fastify.register(fastifyStatic, {
     root: join(__dirname, '..', 'public'),
     prefix: '/',
     index: 'index.html',
     wildcard: false,
-});
-
-fastify.get('/health', async (_request, reply) => {
-    try {
-        await fastify.pg.query('SELECT 1');
-        return reply.status(200).send({ status: 'ok' });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        return reply.status(503).send({ status: 'error', message });
-    }
 });
 
 fastify.setErrorHandler((error: FastifyError, _request, reply) => {
@@ -67,25 +53,6 @@ fastify.setErrorHandler((error: FastifyError, _request, reply) => {
     }
     fastify.log.error({ err: error }, 'Unhandled route error');
     reply.status(500).send({ error: 'Internal server error' });
-});
-
-fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
-    const path = request.raw.url ?? request.url;
-
-    if (!path.startsWith('/api')) {
-        return;
-    }
-    for (const p of publicPaths) {
-        if (path.startsWith(p)) {
-            return;
-        }
-    }
-
-    const headersApiKey = String(request.headers['x-api-key'] ?? '');
-    if (headersApiKey !== config.apiKey) {
-        request.log?.warn({ ip: request.ip, path }, 'Unauthorized request');
-        return reply.status(401).send({ error: 'Unauthorized' });
-    }
 });
 
 fastify.addHook('onReady', async () => {
