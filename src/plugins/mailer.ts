@@ -1,13 +1,13 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import { Resend } from 'resend';
-import { createMailer } from '../services/mailer.ts';
-import type { Mailer } from '../types/index.ts';
+import { createMailer } from '../clients/index.ts';
+import type { ConfirmationMailer, NotificationMailer } from '../types/index.ts';
 import type { AppConfig } from '../config.ts';
 
 declare module 'fastify' {
     interface FastifyInstance {
-        mailer: Mailer;
+        mailer: ConfirmationMailer & NotificationMailer;
     }
 }
 

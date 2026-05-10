@@ -1,10 +1,11 @@
 import type { GitHubClient, GitHubRelease } from '../types/index.ts';
 import { REPO_REGEX } from '../constants/index.ts';
+import { GitHubApiError, InvalidRepoFormatError } from '../errors/index.ts';
 
 export const createGitHubClient = (baseUrl: string, token?: string): GitHubClient => {
     const getLatestRelease = async (repo: string): Promise<GitHubRelease | null> => {
         if (!REPO_REGEX.test(repo)) {
-            throw new Error('Invalid repository format');
+            throw new InvalidRepoFormatError();
         }
 
         const response = await fetch(`${baseUrl}/repos/${repo}/releases/latest`, {
@@ -22,7 +23,7 @@ export const createGitHubClient = (baseUrl: string, token?: string): GitHubClien
         }
 
         if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status}`);
+            throw new GitHubApiError(response.status);
         }
 
         return response.json();

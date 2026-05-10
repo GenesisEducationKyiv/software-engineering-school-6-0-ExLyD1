@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { EMAIL_REGEX, UUID_REGEX, REPO_REGEX } from '../constants/regex.ts';
+import { EMAIL_REGEX, UUID_REGEX } from '../constants/index.ts';
 import {
     subscribe,
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
-    AlreadySubscribedError,
 } from '../services/subscription.ts';
+import { AlreadySubscribedError, GitHubApiError, InvalidRepoFormatError } from '../errors/index.ts';
 
 async function routes(fastify: FastifyInstance) {
     fastify.post(
@@ -20,12 +20,7 @@ async function routes(fastify: FastifyInstance) {
 
             const { email, repo } = body as { email: unknown; repo: unknown };
 
-            if (
-                typeof email !== 'string' ||
-                typeof repo !== 'string' ||
-                !EMAIL_REGEX.test(email) ||
-                !REPO_REGEX.test(repo)
-            ) {
+            if (typeof email !== 'string' || typeof repo !== 'string' || !EMAIL_REGEX.test(email)) {
                 return reply.status(400).send({ error: 'Invalid input' });
             }
 
@@ -33,7 +28,10 @@ async function routes(fastify: FastifyInstance) {
             try {
                 latestRelease = await fastify.github.getLatestRelease(repo);
             } catch (err) {
-                if (err instanceof Error && err.message.includes('GitHub API error: 429')) {
+                if (err instanceof InvalidRepoFormatError) {
+                    return reply.status(400).send({ error: 'Invalid repository format' });
+                }
+                if (err instanceof GitHubApiError && err.status === 429) {
                     return reply
                         .status(429)
                         .send({ error: 'GitHub API rate limit exceeded. Please try again later.' });

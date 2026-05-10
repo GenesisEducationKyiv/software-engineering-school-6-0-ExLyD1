@@ -1,7 +1,11 @@
 import type { Resend } from 'resend';
-import type { Mailer } from '../types/index.ts';
+import type { ConfirmationMailer, NotificationMailer } from '../types/index.ts';
 
-export const createMailer = (resend: Resend, baseUrl: string, from: string): Mailer => {
+export const createMailer = (
+    resend: Resend,
+    baseUrl: string,
+    from: string,
+): ConfirmationMailer & NotificationMailer => {
     const sendConfirmationEmail = async (email: string, confirmToken: string): Promise<void> => {
         const { error } = await resend.emails.send({
             from,

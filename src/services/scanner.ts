@@ -1,4 +1,5 @@
-import type { DbPool, GitHubClient, Mailer, WatchedRepo } from '../types/index.ts';
+import type { DbPool, GitHubClient, NotificationMailer, WatchedRepo } from '../types/index.ts';
+import { GitHubApiError } from '../errors/index.ts';
 import {
     getWatchedRepos,
     getConfirmedSubscribers,
@@ -44,7 +45,7 @@ export const fetchRepoUpdates = async (
                     }
                     return { status: 'ready', repo, latestTag: release.tag_name };
                 } catch (err) {
-                    if (err instanceof Error && err.message.includes('GitHub API error: 429')) {
+                    if (err instanceof GitHubApiError && err.status === 429) {
                         return { status: 'rate_limited', repo };
                     }
                     log.error(
@@ -56,7 +57,10 @@ export const fetchRepoUpdates = async (
             }),
         );
 
-        const rateLimited = results.find((r): r is Extract<ChunkResult, { status: 'rate_limited' }> => r.status === 'rate_limited');
+        const rateLimited = results.find(
+            (r): r is Extract<ChunkResult, { status: 'rate_limited' }> =>
+                r.status === 'rate_limited',
+        );
         if (rateLimited) {
             log.error(
                 `Scanner: rate limit hit for ${rateLimited.repo.owner_repo}, aborting scan cycle`,
@@ -77,7 +81,7 @@ export const fetchRepoUpdates = async (
 export const persistAndNotify = async (
     updates: RepoUpdate[],
     db: DbPool,
-    mailer: Mailer,
+    mailer: NotificationMailer,
     log: Logger,
 ): Promise<void> => {
     for (const { repo, latestTag } of updates) {
@@ -85,9 +89,7 @@ export const persistAndNotify = async (
 
         const subscribers = await getConfirmedSubscribers(db, repo.id);
 
-        log.info(
-            `Scanner: notifying ${subscribers.length} subscriber(s) for ${repo.owner_repo}`,
-        );
+        log.info(`Scanner: notifying ${subscribers.length} subscriber(s) for ${repo.owner_repo}`);
 
         await updateLastSeenTag(db, repo.id, latestTag);
 
@@ -100,10 +102,7 @@ export const persistAndNotify = async (
                     sub.unsubscribe_token,
                 );
             } catch (err) {
-                log.error(
-                    { err },
-                    `Scanner: failed to notify ${sub.email} for ${repo.owner_repo}`,
-                );
+                log.error({ err }, `Scanner: failed to notify ${sub.email} for ${repo.owner_repo}`);
             }
         }
     }
@@ -112,7 +111,7 @@ export const persistAndNotify = async (
 export const runScanCycle = async (
     db: DbPool,
     github: GitHubClient,
-    mailer: Mailer,
+    mailer: NotificationMailer,
     log: Logger,
 ): Promise<void> => {
     log.info('Scanner: starting scan cycle');
@@ -120,7 +119,9 @@ export const runScanCycle = async (
     const watchedRepos = await getWatchedRepos(db);
     const updates = await fetchRepoUpdates(watchedRepos, github, log);
 
-    if (updates === 'rate_limited') return;
+    if (updates === 'rate_limited') {
+        return;
+    }
 
     await persistAndNotify(updates, db, mailer, log);
 
@@ -130,7 +131,7 @@ export const runScanCycle = async (
 export const startScanner = (
     db: DbPool,
     github: GitHubClient,
-    mailer: Mailer,
+    mailer: NotificationMailer,
     log: Logger,
     intervalMs: number,
 ): ReturnType<typeof setInterval> => {

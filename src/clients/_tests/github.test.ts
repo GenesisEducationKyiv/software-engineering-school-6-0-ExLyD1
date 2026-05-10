@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGitHubClient } from '../github.ts';
+import { GitHubApiError, InvalidRepoFormatError } from '../../errors/index.ts';
 
 const BASE_URL = 'https://api.github.com';
 
@@ -46,7 +47,7 @@ describe('createGitHubClient', () => {
 
             const client = createGitHubClient(BASE_URL);
             await expect(client.getLatestRelease('microsoft/vscode')).rejects.toThrow(
-                'GitHub API error: 429',
+                GitHubApiError,
             );
         });
 
@@ -55,14 +56,14 @@ describe('createGitHubClient', () => {
 
             const client = createGitHubClient(BASE_URL);
             await expect(client.getLatestRelease('microsoft/vscode')).rejects.toThrow(
-                'GitHub API error: 500',
+                GitHubApiError,
             );
         });
 
         it('throws on invalid repo format', async () => {
             const client = createGitHubClient(BASE_URL);
             await expect(client.getLatestRelease('not-a-valid-repo')).rejects.toThrow(
-                'Invalid repository format',
+                InvalidRepoFormatError,
             );
             expect(mockFetch).not.toHaveBeenCalled();
         });

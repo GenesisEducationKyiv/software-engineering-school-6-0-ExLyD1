@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runScanCycle } from '../scanner.ts';
-import type { DbPool, GitHubClient, Mailer, WatchedRepo } from '../../types/index.ts';
-import type { GitHubRelease } from '../../types/index.ts';
+import { GitHubApiError } from '../../errors/index.ts';
+import type {
+    DbPool,
+    GitHubClient,
+    NotificationMailer,
+    ConfirmationMailer,
+    WatchedRepo,
+    GitHubRelease,
+} from '../../types/index.ts';
 
 vi.mock('../../repositories/scanner.repository.ts', () => ({
     getWatchedRepos: vi.fn(),
@@ -23,7 +30,7 @@ function buildDeps(watchedRepos: WatchedRepo[] = []) {
     mockGetWatchedRepos.mockResolvedValue(watchedRepos);
 
     const github: GitHubClient = { getLatestRelease: vi.fn() };
-    const mailer: Mailer = {
+    const mailer: NotificationMailer & ConfirmationMailer = {
         sendConfirmationEmail: vi.fn(),
         sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
     };
@@ -132,15 +139,13 @@ describe('runScanCycle', () => {
         const { github, mailer, log, db } = buildDeps(repos);
 
         vi.mocked(github.getLatestRelease)
-            .mockRejectedValueOnce(new Error('GitHub API error: 429'))
+            .mockRejectedValueOnce(new GitHubApiError(429))
             .mockResolvedValueOnce({ tag_name: 'v3.0.0' } as GitHubRelease);
 
         await runScanCycle(db, github, mailer, log);
 
         expect(github.getLatestRelease).toHaveBeenCalledTimes(2);
         expect(mailer.sendReleaseNotification).not.toHaveBeenCalled();
-        expect(log.error).toHaveBeenCalledWith(
-            expect.stringContaining('aborting scan cycle'),
-        );
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('aborting scan cycle'));
     });
 });

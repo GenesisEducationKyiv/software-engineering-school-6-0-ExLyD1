@@ -1,11 +1,11 @@
-import type { QueryRunner } from '../types/index.ts';
-import type { User, Repository, Subscription, SubscriptionRow } from '../types/index.ts';
-
-export class AlreadySubscribedError extends Error {
-    constructor() {
-        super('Email already subscribed to this repository');
-    }
-}
+import type {
+    QueryRunner,
+    User,
+    Repository,
+    Subscription,
+    SubscriptionRow,
+} from '../types/index.ts';
+import { AlreadySubscribedError } from '../errors/index.ts';
 
 export const upsertUser = async (db: QueryRunner, email: string): Promise<number> => {
     await db.query(`INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING`, [email]);
@@ -59,10 +59,7 @@ export const insertSubscription = async (
     return { confirmToken, unsubscribeToken };
 };
 
-export const confirmSubscription = async (
-    db: QueryRunner,
-    token: string,
-): Promise<boolean> => {
+export const confirmSubscription = async (db: QueryRunner, token: string): Promise<boolean> => {
     const result = await db.query<Subscription>(
         `UPDATE subscriptions SET confirmed = true WHERE confirm_token = $1 RETURNING *`,
         [token],

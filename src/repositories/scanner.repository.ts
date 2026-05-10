@@ -1,5 +1,4 @@
-import type { QueryRunner } from '../types/index.ts';
-import type { WatchedRepo, ScannerSubscriberRow } from '../types/index.ts';
+import type { QueryRunner, WatchedRepo, ScannerSubscriberRow } from '../types/index.ts';
 
 export const getWatchedRepos = async (db: QueryRunner): Promise<WatchedRepo[]> => {
     const { rows } = await db.query<WatchedRepo>(`

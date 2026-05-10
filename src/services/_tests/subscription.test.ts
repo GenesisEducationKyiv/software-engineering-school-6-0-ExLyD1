@@ -4,8 +4,8 @@ import {
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
-    AlreadySubscribedError,
 } from '../subscription.ts';
+import { AlreadySubscribedError } from '../../errors/index.ts';
 import type { DbPool } from '../../types/index.ts';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -58,25 +58,25 @@ describe('subscribe', () => {
     it('throws AlreadySubscribedError when pg returns unique violation (code 23505)', async () => {
         const err = Object.assign(new Error('unique violation'), { code: '23505' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(
-            subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop),
-        ).rejects.toThrow(AlreadySubscribedError);
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+            AlreadySubscribedError,
+        );
     });
 
     it('AlreadySubscribedError message describes the conflict', async () => {
         const err = Object.assign(new Error('unique violation'), { code: '23505' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(
-            subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop),
-        ).rejects.toThrow('Email already subscribed to this repository');
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+            'Email already subscribed to this repository',
+        );
     });
 
     it('re-throws non-duplicate DB errors without wrapping', async () => {
         const err = Object.assign(new Error('connection refused'), { code: '08006' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(
-            subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop),
-        ).rejects.toThrow('connection refused');
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+            'connection refused',
+        );
     });
 
     it('rolls back and throws when onBeforeCommit callback throws (e.g. email failure)', async () => {

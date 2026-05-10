@@ -22,7 +22,9 @@ export const loadConfig = (): AppConfig => {
 
     for (const [key, value] of Object.entries(required)) {
         if (!value) {
-            throw new Error(`Missing required env var: ${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`);
+            throw new Error(
+                `Missing required env var: ${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`,
+            );
         }
     }
 

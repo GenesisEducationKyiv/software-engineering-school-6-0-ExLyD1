@@ -3,23 +3,15 @@ import Fastify from 'fastify';
 import type {} from '../../plugins/mailer.ts';
 import type {} from '../../plugins/github.ts';
 
-vi.mock('../../services/subscription.ts', () => {
-    class AlreadySubscribedError extends Error {
-        constructor() {
-            super('already subscribed');
-            this.name = 'AlreadySubscribedError';
-        }
-    }
-    return {
-        AlreadySubscribedError,
-        subscribe: vi.fn(),
-        confirmSubscription: vi.fn(),
-        deleteSubscription: vi.fn(),
-        getSubscriptionsByEmail: vi.fn(),
-    };
-});
+vi.mock('../../services/subscription.ts', () => ({
+    subscribe: vi.fn(),
+    confirmSubscription: vi.fn(),
+    deleteSubscription: vi.fn(),
+    getSubscriptionsByEmail: vi.fn(),
+}));
 
-import { subscribe, AlreadySubscribedError } from '../../services/subscription.ts';
+import { subscribe } from '../../services/subscription.ts';
+import { AlreadySubscribedError } from '../../errors/index.ts';
 import routes from '../subscription.ts';
 import type { GitHubRelease } from '../../types/index.ts';
 
@@ -29,8 +21,7 @@ function buildApp(githubOverrides?: { getLatestRelease?: () => Promise<GitHubRel
     const app = Fastify({ logger: false });
 
     app.decorate('github', {
-        getLatestRelease:
-            githubOverrides?.getLatestRelease ?? vi.fn().mockResolvedValue(null),
+        getLatestRelease: githubOverrides?.getLatestRelease ?? vi.fn().mockResolvedValue(null),
     });
     app.decorate('mailer', {
         sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),

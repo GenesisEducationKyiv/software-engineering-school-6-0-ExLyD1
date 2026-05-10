@@ -8,8 +8,6 @@ import {
     getSubscriptionsByEmail as repoGetByEmail,
 } from '../repositories/subscription.repository.ts';
 
-export { AlreadySubscribedError } from '../repositories/subscription.repository.ts';
-
 export const subscribe = async (
     db: DbPool,
     email: string,

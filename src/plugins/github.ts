@@ -1,6 +1,6 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
-import { createGitHubClient } from '../services/github.ts';
+import { createGitHubClient } from '../clients/index.ts';
 import type { GitHubClient } from '../types/index.ts';
 import type { AppConfig } from '../config.ts';
 
