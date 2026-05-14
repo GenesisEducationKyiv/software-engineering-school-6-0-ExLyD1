@@ -112,26 +112,35 @@ See [`swagger.yaml`](swagger.yaml) for the full OpenAPI spec.
 
 ```
 src/
-  app.ts                  — server entry point, plugin registration, startup validation
-  api/
-    subscription.ts       — route handlers (subscribe, confirm, unsubscribe, subscriptions)
+  app.ts                          — entry point: plugin registration and startup
+  clients/
+    github.ts                     — GitHub REST API HTTP client
+    mailer.ts                     — Resend email client
+  controllers/
+    subscription.ts               — route handlers (subscribe, confirm, unsubscribe, list)
+    health.ts                     — GET /health route handler
   services/
-    github.ts             — GitHub API client (getLatestRelease)
-    scanner.ts            — background release scanner
-    subscription.ts       — database service layer (subscribe, confirm, delete, list)
-  notifier/
-    index.ts              — email factory (confirmation + release notification emails)
+    scanner.ts                    — background release scanner
+    subscription.ts               — subscription business logic (transaction, callbacks)
+  repositories/
+    subscription.repository.ts    — subscription DB queries
+    scanner.repository.ts         — scanner DB queries
+  errors/
+    github.ts                     — GitHubApiError, InvalidRepoFormatError
+    subscription.ts               — AlreadySubscribedError
   plugins/
-    db.ts                 — @fastify/postgres plugin registration
-    mailer.ts             — Resend plugin registration (fastify.mailer)
-  database/
-    migrate.ts            — migration runner (runs automatically on startup)
-    migrations/           — ordered SQL migration files (001–004)
+    auth.ts                       — API key auth middleware (preHandler hook)
+    db.ts                         — @fastify/postgres registration
+    github.ts                     — GitHub client plugin (fastify.github)
+    mailer.ts                     — Resend mailer plugin (fastify.mailer)
   constants/
-    regex.ts              — shared validation regexes (email, repo, UUID)
-  types/                  — shared TypeScript interfaces
+    regex.ts                      — shared validation regexes (email, repo, UUID)
+  types/                          — shared TypeScript interfaces
+  database/
+    migrate.ts                    — migration runner (runs automatically on startup)
+    migrations/                   — ordered SQL migration files
 public/
-  index.html              — minimal web UI for subscribing and looking up subscriptions
-swagger.yaml              — OpenAPI 2.0 spec
-docker-compose.yml        — app + PostgreSQL container setup
+  index.html                      — minimal web UI
+swagger.yaml                      — OpenAPI spec
+docker-compose.yml                — app + PostgreSQL container setup
 ```
