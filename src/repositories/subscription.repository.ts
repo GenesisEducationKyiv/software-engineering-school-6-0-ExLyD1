@@ -35,10 +35,9 @@ export const insertSubscription = async (
     db: QueryRunner,
     userId: number,
     repoId: number,
-): Promise<{ confirmToken: string; unsubscribeToken: string }> => {
-    const confirmToken = crypto.randomUUID();
-    const unsubscribeToken = crypto.randomUUID();
-
+    confirmToken: string,
+    unsubscribeToken: string,
+): Promise<void> => {
     try {
         await db.query(
             `INSERT INTO subscriptions (user_id, repository_id, confirm_token, unsubscribe_token) VALUES ($1, $2, $3, $4)`,
@@ -55,8 +54,6 @@ export const insertSubscription = async (
         }
         throw err;
     }
-
-    return { confirmToken, unsubscribeToken };
 };
 
 export const confirmSubscription = async (db: QueryRunner, token: string): Promise<boolean> => {

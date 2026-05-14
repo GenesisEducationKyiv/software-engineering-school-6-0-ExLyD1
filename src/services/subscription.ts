@@ -20,7 +20,9 @@ export const subscribe = async (
 
         const userId = await upsertUser(client, email);
         const repoId = await upsertRepository(client, repo, lastSeenTag);
-        const { confirmToken } = await insertSubscription(client, userId, repoId);
+        const confirmToken = crypto.randomUUID();
+        const unsubscribeToken = crypto.randomUUID();
+        await insertSubscription(client, userId, repoId, confirmToken, unsubscribeToken);
 
         await client.query('COMMIT');
         return confirmToken;
