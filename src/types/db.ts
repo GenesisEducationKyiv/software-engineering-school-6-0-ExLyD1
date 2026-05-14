@@ -27,3 +27,18 @@ export type SubscriptionRow = Pick<User, 'email'> &
 export type WatchedRepo = Pick<Repository, 'id' | 'owner_repo' | 'last_seen_tag'>;
 
 export type ScannerSubscriberRow = Pick<User, 'email'> & Pick<Subscription, 'unsubscribe_token'>;
+
+export type QueryRunner = {
+    query: <T = unknown>(
+        sql: string,
+        params?: unknown[],
+    ) => Promise<{ rows: T[]; rowCount: number | null }>;
+};
+
+export type PoolClient = QueryRunner & {
+    release: () => void;
+};
+
+export type DbPool = QueryRunner & {
+    connect: () => Promise<PoolClient>;
+};

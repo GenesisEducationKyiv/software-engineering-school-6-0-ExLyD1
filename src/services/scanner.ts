@@ -1,34 +1,43 @@
-import type { FastifyInstance } from 'fastify';
-import { getLatestRelease } from './github.ts';
-import type { WatchedRepo, ScannerSubscriberRow } from '../types/index.ts';
+import type { DbPool, GitHubClient, NotificationMailer, WatchedRepo } from '../types/index.ts';
+import { GitHubApiError } from '../errors/index.ts';
+import {
+    getWatchedRepos,
+    getConfirmedSubscribers,
+    updateLastSeenTag,
+} from '../repositories/scanner.repository.ts';
 import { SCAN_CHUNK_SIZE } from '../constants/index.ts';
 
-export const runScanCycle = async (fastify: FastifyInstance): Promise<void> => {
-    fastify.log.info('Scanner: starting scan cycle');
+type Logger = {
+    info: (msg: string) => void;
+    error: (msg: string | object, ...args: unknown[]) => void;
+};
 
-    const { rows: watchedRepos } = await fastify.pg.query<WatchedRepo>(`
-        SELECT DISTINCT r.id, r.owner_repo, r.last_seen_tag
-        FROM repositories r
-        JOIN subscriptions s ON s.repository_id = r.id
-        WHERE s.confirmed = true
-    `);
+type RepoUpdate = {
+    repo: WatchedRepo;
+    latestTag: string;
+};
 
-    for (let i = 0; i < watchedRepos.length; i += SCAN_CHUNK_SIZE) {
-        const chunk = watchedRepos.slice(i, i + SCAN_CHUNK_SIZE);
+export const fetchRepoUpdates = async (
+    repos: WatchedRepo[],
+    github: GitHubClient,
+    log: Logger,
+): Promise<RepoUpdate[] | 'rate_limited'> => {
+    type ChunkResult =
+        | { status: 'rate_limited'; repo: WatchedRepo }
+        | { status: 'skipped' | 'unchanged' }
+        | { status: 'ready'; repo: WatchedRepo; latestTag: string };
 
-        type RepoResult =
-            | { status: 'rate_limited'; repo: WatchedRepo }
-            | { status: 'skipped' | 'unchanged' }
-            | { status: 'ready'; repo: WatchedRepo; latestTag: string };
+    const updates: RepoUpdate[] = [];
+
+    for (let i = 0; i < repos.length; i += SCAN_CHUNK_SIZE) {
+        const chunk = repos.slice(i, i + SCAN_CHUNK_SIZE);
 
         const results = await Promise.all(
-            chunk.map(async (repo: WatchedRepo): Promise<RepoResult> => {
+            chunk.map(async (repo): Promise<ChunkResult> => {
                 try {
-                    const release = await getLatestRelease(repo.owner_repo);
+                    const release = await github.getLatestRelease(repo.owner_repo);
                     if (!release) {
-                        fastify.log.info(
-                            `Scanner: no releases found for ${repo.owner_repo}, skipping`,
-                        );
+                        log.info(`Scanner: no releases found for ${repo.owner_repo}, skipping`);
                         return { status: 'skipped' };
                     }
                     if (repo.last_seen_tag === release.tag_name) {
@@ -36,11 +45,10 @@ export const runScanCycle = async (fastify: FastifyInstance): Promise<void> => {
                     }
                     return { status: 'ready', repo, latestTag: release.tag_name };
                 } catch (err) {
-                    // I know that in swagger it is not any 429 error, but it is just my own decision to add
-                    if (err instanceof Error && err.message.includes('GitHub API error: 429')) {
+                    if (err instanceof GitHubApiError && err.status === 429) {
                         return { status: 'rate_limited', repo };
                     }
-                    fastify.log.error(
+                    log.error(
                         { err },
                         `Scanner: failed to fetch release for ${repo.owner_repo}, skipping`,
                     );
@@ -49,81 +57,92 @@ export const runScanCycle = async (fastify: FastifyInstance): Promise<void> => {
             }),
         );
 
-        const rateLimited = results.find((r: RepoResult) => r.status === 'rate_limited');
-        if (rateLimited && rateLimited.status === 'rate_limited') {
-            fastify.log.error(
+        const rateLimited = results.find(
+            (r): r is Extract<ChunkResult, { status: 'rate_limited' }> =>
+                r.status === 'rate_limited',
+        );
+        if (rateLimited) {
+            log.error(
                 `Scanner: rate limit hit for ${rateLimited.repo.owner_repo}, aborting scan cycle`,
             );
-            return;
+            return 'rate_limited';
         }
 
         for (const result of results) {
-            if (result.status !== 'ready') {
-                continue;
-            }
-            const { repo, latestTag } = result;
-
-            fastify.log.info(`Scanner: new release ${latestTag} for ${repo.owner_repo}`);
-
-            const { rows: subscribers } = await fastify.pg.query<ScannerSubscriberRow>(
-                `
-                SELECT u.email, s.unsubscribe_token
-                FROM subscriptions s
-                JOIN users u ON u.id = s.user_id
-                WHERE s.repository_id = $1 AND s.confirmed = true
-            `,
-                [repo.id],
-            );
-
-            fastify.log.info(
-                `Scanner: notifying ${subscribers.length} subscriber(s) for ${repo.owner_repo}`,
-            );
-
-            await fastify.pg.query(`UPDATE repositories SET last_seen_tag = $1 WHERE id = $2`, [
-                latestTag,
-                repo.id,
-            ]);
-
-            // <3 genesis love Future Perspective: ---> TODO: add email queue for high-volume scenarios
-            for (const sub of subscribers) {
-                try {
-                    await fastify.mailer.sendReleaseNotification(
-                        sub.email,
-                        repo.owner_repo,
-                        latestTag,
-                        sub.unsubscribe_token,
-                        fastify.log,
-                    );
-                } catch (err) {
-                    fastify.log.error(
-                        { err },
-                        `Scanner: failed to notify ${sub.email} for ${repo.owner_repo}`,
-                    );
-                }
+            if (result.status === 'ready') {
+                updates.push({ repo: result.repo, latestTag: result.latestTag });
             }
         }
     }
 
-    fastify.log.info('Scanner: scan cycle complete');
+    return updates;
 };
 
-export const startScanner = (fastify: FastifyInstance, intervalMs: number): void => {
+export const persistAndNotify = async (
+    updates: RepoUpdate[],
+    db: DbPool,
+    mailer: NotificationMailer,
+    log: Logger,
+): Promise<void> => {
+    for (const { repo, latestTag } of updates) {
+        log.info(`Scanner: new release ${latestTag} for ${repo.owner_repo}`);
+
+        const subscribers = await getConfirmedSubscribers(db, repo.id);
+
+        log.info(`Scanner: notifying ${subscribers.length} subscriber(s) for ${repo.owner_repo}`);
+
+        await updateLastSeenTag(db, repo.id, latestTag);
+
+        for (const sub of subscribers) {
+            try {
+                await mailer.sendReleaseNotification(
+                    sub.email,
+                    repo.owner_repo,
+                    latestTag,
+                    sub.unsubscribe_token,
+                );
+            } catch (err) {
+                log.error({ err }, `Scanner: failed to notify ${sub.email} for ${repo.owner_repo}`);
+            }
+        }
+    }
+};
+
+export const runScanCycle = async (
+    db: DbPool,
+    github: GitHubClient,
+    mailer: NotificationMailer,
+    log: Logger,
+): Promise<void> => {
+    log.info('Scanner: starting scan cycle');
+
+    const watchedRepos = await getWatchedRepos(db);
+    const updates = await fetchRepoUpdates(watchedRepos, github, log);
+
+    if (updates === 'rate_limited') {
+        return;
+    }
+
+    await persistAndNotify(updates, db, mailer, log);
+
+    log.info('Scanner: scan cycle complete');
+};
+
+export const startScanner = (
+    db: DbPool,
+    github: GitHubClient,
+    mailer: NotificationMailer,
+    log: Logger,
+    intervalMs: number,
+): ReturnType<typeof setInterval> => {
     const run = async () => {
         try {
-            await runScanCycle(fastify);
+            await runScanCycle(db, github, mailer, log);
         } catch (err) {
-            fastify.log.error({ err }, 'Scanner: unhandled error in scan cycle');
+            log.error({ err }, 'Scanner: unhandled error in scan cycle');
         }
     };
 
     run();
-
-    const timer = setInterval(run, intervalMs);
-
-    fastify.addHook('onClose', async () => {
-        clearInterval(timer);
-        fastify.log.info('Scanner: stopped');
-    });
-
-    fastify.log.info(`Scanner: started, interval ${intervalMs / 1000}s`);
+    return setInterval(run, intervalMs);
 };

@@ -1,19 +1,19 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import { Resend } from 'resend';
-import { createMailer } from '../notifier/index.ts';
-import type { Mailer } from '../types/index.ts';
+import { createMailer } from '../clients/index.ts';
+import type { ConfirmationMailer, NotificationMailer } from '../types/index.ts';
+import type { AppConfig } from '../config.ts';
 
 declare module 'fastify' {
     interface FastifyInstance {
-        mailer: Mailer;
+        mailer: ConfirmationMailer & NotificationMailer;
     }
 }
 
-async function mailerConnector(fastify: FastifyInstance) {
-    const resend = new Resend(process.env.RESEND_API_KEY!);
-
-    fastify.decorate('mailer', createMailer(resend, process.env.BASE_URL!, process.env.SMTP_FROM!));
-}
+const mailerConnector = async (fastify: FastifyInstance, config: AppConfig) => {
+    const resend = new Resend(config.resendApiKey);
+    fastify.decorate('mailer', createMailer(resend, config.baseUrl, config.smtpFrom));
+};
 
 export default fastifyPlugin(mailerConnector);

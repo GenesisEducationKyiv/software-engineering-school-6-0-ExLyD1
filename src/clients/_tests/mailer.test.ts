@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createMailer } from '../index.ts';
+import { createMailer } from '../mailer.ts';
 
 const BASE_URL = 'https://notifier.example.com';
 const FROM = 'notifier@example.com';
@@ -97,6 +97,15 @@ describe('createMailer', () => {
 
             const sentArgs = resend.emails.send.mock.calls[0][0] as { text: string };
             expect(sentArgs.text).toContain(`${BASE_URL}/api/unsubscribe/unsub-token`);
+        });
+
+        it('throws when the mail server returns an error', async () => {
+            const resend = buildResend({ message: 'rate limit exceeded' });
+            const mailer = createMailer(resend as never, BASE_URL, FROM);
+
+            await expect(
+                mailer.sendReleaseNotification('user@example.com', 'org/repo', 'v2.0.0', 'tok'),
+            ).rejects.toThrow('Failed to send release notification');
         });
     });
 });

@@ -1,28 +1,43 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type {} from '../../plugins/mailer.ts';
-import type {} from '@fastify/postgres';
+import { runScanCycle } from '../scanner.ts';
+import { GitHubApiError } from '../../errors/index.ts';
+import type {
+    DbPool,
+    GitHubClient,
+    NotificationMailer,
+    ConfirmationMailer,
+    WatchedRepo,
+    GitHubRelease,
+} from '../../types/index.ts';
 
-vi.mock('../github.ts', () => ({
-    getLatestRelease: vi.fn(),
+vi.mock('../../repositories/scanner.repository.ts', () => ({
+    getWatchedRepos: vi.fn(),
+    getConfirmedSubscribers: vi.fn(),
+    updateLastSeenTag: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { getLatestRelease } from '../github.ts';
-import { runScanCycle } from '../scanner.ts';
-import type { FastifyInstance } from 'fastify';
-import type { GitHubRelease } from '../../types/index.ts';
+import {
+    getWatchedRepos,
+    getConfirmedSubscribers,
+    updateLastSeenTag,
+} from '../../repositories/scanner.repository.ts';
 
-const mockGetLatestRelease = vi.mocked(getLatestRelease);
+const mockGetWatchedRepos = vi.mocked(getWatchedRepos);
+const mockGetConfirmedSubscribers = vi.mocked(getConfirmedSubscribers);
+const mockUpdateLastSeenTag = vi.mocked(updateLastSeenTag);
 
-function buildFastify(queryResponses: unknown[]): FastifyInstance {
-    const queryMock = vi.fn();
-    queryResponses.forEach((res) => queryMock.mockResolvedValueOnce(res));
+function buildDeps(watchedRepos: WatchedRepo[] = []) {
+    mockGetWatchedRepos.mockResolvedValue(watchedRepos);
 
-    return {
-        log: { info: vi.fn(), error: vi.fn() },
-        pg: { query: queryMock },
-        mailer: { sendReleaseNotification: vi.fn().mockResolvedValue(undefined) },
-        addHook: vi.fn(),
-    } as unknown as FastifyInstance;
+    const github: GitHubClient = { getLatestRelease: vi.fn() };
+    const mailer: NotificationMailer & ConfirmationMailer = {
+        sendConfirmationEmail: vi.fn(),
+        sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
+    };
+    const log = { info: vi.fn(), error: vi.fn() };
+    const db = {} as DbPool;
+
+    return { github, mailer, log, db };
 }
 
 beforeEach(() => {
@@ -31,126 +46,106 @@ beforeEach(() => {
 
 describe('runScanCycle', () => {
     it('skips repos with no confirmed subscribers (empty watchedRepos)', async () => {
-        const fastify = buildFastify([{ rows: [] }]);
+        const { github, mailer, log, db } = buildDeps([]);
 
-        await runScanCycle(fastify);
+        await runScanCycle(db, github, mailer, log);
 
-        expect(mockGetLatestRelease).not.toHaveBeenCalled();
-        expect(fastify.mailer.sendReleaseNotification).not.toHaveBeenCalled();
+        expect(github.getLatestRelease).not.toHaveBeenCalled();
+        expect(mailer.sendReleaseNotification).not.toHaveBeenCalled();
     });
 
     it('does NOT notify when tag is unchanged', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease);
+        const repo: WatchedRepo = { id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' };
+        const { github, mailer, log, db } = buildDeps([repo]);
 
-        const fastify = buildFastify([
-            { rows: [{ id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
-        ]);
+        vi.mocked(github.getLatestRelease).mockResolvedValue({
+            tag_name: 'v1.0.0',
+        } as GitHubRelease);
 
-        await runScanCycle(fastify);
+        await runScanCycle(db, github, mailer, log);
 
-        expect(mockGetLatestRelease).toHaveBeenCalledWith('org/repo');
-        expect(fastify.mailer.sendReleaseNotification).not.toHaveBeenCalled();
-        const pgQuery = fastify.pg.query as ReturnType<typeof vi.fn>;
-        expect(pgQuery).not.toHaveBeenCalledWith(
-            expect.stringContaining('UPDATE'),
-            expect.anything(),
-        );
+        expect(github.getLatestRelease).toHaveBeenCalledWith('org/repo');
+        expect(mailer.sendReleaseNotification).not.toHaveBeenCalled();
+        expect(mockUpdateLastSeenTag).not.toHaveBeenCalled();
     });
 
     it('notifies all confirmed subscribers when new release detected', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
+        const repo: WatchedRepo = { id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' };
+        const { github, mailer, log, db } = buildDeps([repo]);
 
-        const fastify = buildFastify([
-            { rows: [{ id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
-            { rows: [{ email: 'user@example.com', unsubscribe_token: 'tok-abc' }] },
-            { rows: [] },
+        vi.mocked(github.getLatestRelease).mockResolvedValue({
+            tag_name: 'v2.0.0',
+        } as GitHubRelease);
+        mockGetConfirmedSubscribers.mockResolvedValue([
+            { email: 'user@example.com', unsubscribe_token: 'tok-abc' },
         ]);
 
-        await runScanCycle(fastify);
+        await runScanCycle(db, github, mailer, log);
 
-        expect(fastify.mailer.sendReleaseNotification).toHaveBeenCalledOnce();
-        expect(fastify.mailer.sendReleaseNotification).toHaveBeenCalledWith(
+        expect(mailer.sendReleaseNotification).toHaveBeenCalledOnce();
+        expect(mailer.sendReleaseNotification).toHaveBeenCalledWith(
             'user@example.com',
             'org/repo',
             'v2.0.0',
             'tok-abc',
-            fastify.log,
         );
     });
 
     it('updates last_seen_tag in repositories after notifying', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
+        const repo: WatchedRepo = { id: 7, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' };
+        const { github, mailer, log, db } = buildDeps([repo]);
 
-        const fastify = buildFastify([
-            { rows: [{ id: 7, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
-            { rows: [{ email: 'user@example.com', unsubscribe_token: 'tok-abc' }] },
-            { rows: [] },
+        vi.mocked(github.getLatestRelease).mockResolvedValue({
+            tag_name: 'v2.0.0',
+        } as GitHubRelease);
+        mockGetConfirmedSubscribers.mockResolvedValue([
+            { email: 'user@example.com', unsubscribe_token: 'tok-abc' },
         ]);
 
-        await runScanCycle(fastify);
+        await runScanCycle(db, github, mailer, log);
 
-        const pgQuery = fastify.pg.query as ReturnType<typeof vi.fn>;
-        const updateCall = pgQuery.mock.calls.find(
-            (call: unknown[]) =>
-                typeof call[0] === 'string' && call[0].includes('UPDATE repositories'),
-        );
-        expect(updateCall).toBeDefined();
-        expect(updateCall![1]).toEqual(['v2.0.0', 7]);
+        expect(mockUpdateLastSeenTag).toHaveBeenCalledWith(db, 7, 'v2.0.0');
     });
 
     it('UPDATE happens before emails, not after', async () => {
-        mockGetLatestRelease.mockResolvedValue({ tag_name: 'v2.0.0' } as GitHubRelease);
+        const repo: WatchedRepo = { id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' };
+        const { github, mailer, log, db } = buildDeps([repo]);
+
+        vi.mocked(github.getLatestRelease).mockResolvedValue({
+            tag_name: 'v2.0.0',
+        } as GitHubRelease);
+        mockGetConfirmedSubscribers.mockResolvedValue([
+            { email: 'user@example.com', unsubscribe_token: 'tok' },
+        ]);
 
         const callOrder: string[] = [];
-        const queryResponses: unknown[] = [
-            { rows: [{ id: 1, owner_repo: 'org/repo', last_seen_tag: 'v1.0.0' }] },
-            { rows: [{ email: 'user@example.com', unsubscribe_token: 'tok' }] },
-            { rows: [] },
-        ];
-        let callCount = 0;
-        const pgQuery = vi.fn(async (...args: unknown[]) => {
-            if (typeof args[0] === 'string' && (args[0] as string).includes('UPDATE')) {
-                callOrder.push('update');
-            }
-            return queryResponses[callCount++];
+        mockUpdateLastSeenTag.mockImplementation(async () => {
+            callOrder.push('update');
+        });
+        vi.mocked(mailer.sendReleaseNotification).mockImplementation(async () => {
+            callOrder.push('email');
         });
 
-        const fastify = {
-            log: { info: vi.fn(), error: vi.fn() },
-            pg: { query: pgQuery },
-            mailer: {
-                sendReleaseNotification: vi.fn(async () => {
-                    callOrder.push('email');
-                }),
-            },
-            addHook: vi.fn(),
-        } as unknown as FastifyInstance;
-
-        await runScanCycle(fastify);
+        await runScanCycle(db, github, mailer, log);
 
         expect(callOrder).toEqual(['update', 'email']);
     });
 
     it('aborts scan cycle when any repo in a batch hits the rate limit', async () => {
-        mockGetLatestRelease
-            .mockRejectedValueOnce(new Error('GitHub API error: 429'))
+        const repos: WatchedRepo[] = [
+            { id: 1, owner_repo: 'rate-limited/repo', last_seen_tag: 'v1.0.0' },
+            { id: 2, owner_repo: 'org/other-repo', last_seen_tag: 'v2.0.0' },
+        ];
+        const { github, mailer, log, db } = buildDeps(repos);
+
+        vi.mocked(github.getLatestRelease)
+            .mockRejectedValueOnce(new GitHubApiError(429))
             .mockResolvedValueOnce({ tag_name: 'v3.0.0' } as GitHubRelease);
 
-        const fastify = buildFastify([
-            {
-                rows: [
-                    { id: 1, owner_repo: 'rate-limited/repo', last_seen_tag: 'v1.0.0' },
-                    { id: 2, owner_repo: 'org/other-repo', last_seen_tag: 'v2.0.0' },
-                ],
-            },
-        ]);
+        await runScanCycle(db, github, mailer, log);
 
-        await runScanCycle(fastify);
-
-        expect(mockGetLatestRelease).toHaveBeenCalledTimes(2);
-        expect(fastify.mailer.sendReleaseNotification).not.toHaveBeenCalled();
-        expect(fastify.log.error).toHaveBeenCalledWith(
-            expect.stringContaining('aborting scan cycle'),
-        );
+        expect(github.getLatestRelease).toHaveBeenCalledTimes(2);
+        expect(mailer.sendReleaseNotification).not.toHaveBeenCalled();
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('aborting scan cycle'));
     });
 });

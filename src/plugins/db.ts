@@ -2,11 +2,12 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import fastifyPostgres from '@fastify/postgres';
+import type { AppConfig } from '../config.ts';
 
-async function dbConnector(fastify: FastifyInstance) {
+const dbConnector = async (fastify: FastifyInstance, config: AppConfig) => {
     fastify.register(fastifyPostgres, {
-        connectionString: process.env.DATABASE_URL,
+        connectionString: config.databaseUrl,
     });
-}
+};
 
 export default fastifyPlugin(dbConnector);

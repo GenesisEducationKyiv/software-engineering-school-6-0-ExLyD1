@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { EMAIL_REGEX, UUID_REGEX, REPO_REGEX } from '../constants/regex.ts';
-import { getLatestRelease } from '../services/github.ts';
+import { EMAIL_REGEX, UUID_REGEX } from '../constants/index.ts';
 import {
     subscribe,
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
-    AlreadySubscribedError,
 } from '../services/subscription.ts';
+import { AlreadySubscribedError, GitHubApiError, InvalidRepoFormatError } from '../errors/index.ts';
 
 async function routes(fastify: FastifyInstance) {
     fastify.post(
@@ -21,21 +20,18 @@ async function routes(fastify: FastifyInstance) {
 
             const { email, repo } = body as { email: unknown; repo: unknown };
 
-            if (
-                typeof email !== 'string' ||
-                typeof repo !== 'string' ||
-                !EMAIL_REGEX.test(email) ||
-                !REPO_REGEX.test(repo)
-            ) {
+            if (typeof email !== 'string' || typeof repo !== 'string' || !EMAIL_REGEX.test(email)) {
                 return reply.status(400).send({ error: 'Invalid input' });
             }
 
             let latestRelease;
             try {
-                latestRelease = await getLatestRelease(repo);
+                latestRelease = await fastify.github.getLatestRelease(repo);
             } catch (err) {
-                // I know that in swagger it is not any 429 error, but it is just my own decision to add
-                if (err instanceof Error && err.message.includes('GitHub API error: 429')) {
+                if (err instanceof InvalidRepoFormatError) {
+                    return reply.status(400).send({ error: 'Invalid repository format' });
+                }
+                if (err instanceof GitHubApiError && err.status === 429) {
                     return reply
                         .status(429)
                         .send({ error: 'GitHub API rate limit exceeded. Please try again later.' });
@@ -49,9 +45,8 @@ async function routes(fastify: FastifyInstance) {
             }
 
             try {
-                await subscribe(fastify, email, repo, latestRelease.tag_name, (token) =>
-                    fastify.mailer.sendConfirmationEmail(email, token),
-                );
+                const token = await subscribe(fastify.pg, email, repo, latestRelease.tag_name);
+                await fastify.mailer.sendConfirmationEmail(email, token);
             } catch (err) {
                 if (err instanceof AlreadySubscribedError) {
                     return reply
@@ -76,7 +71,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const found = await confirmSubscription(fastify, token);
+            const found = await confirmSubscription(fastify.pg, token);
             if (!found) {
                 return reply.status(404).send({ error: 'Token not found' });
             }
@@ -95,7 +90,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const found = await deleteSubscription(fastify, token);
+            const found = await deleteSubscription(fastify.pg, token);
             if (!found) {
                 return reply.status(404).send({ error: 'Token not found' });
             }
@@ -113,7 +108,7 @@ async function routes(fastify: FastifyInstance) {
         }
 
         try {
-            const items = await getSubscriptionsByEmail(fastify, email);
+            const items = await getSubscriptionsByEmail(fastify.pg, email);
             return reply.status(200).send(items);
         } catch (err) {
             fastify.log.error({ err }, 'GET /api/subscriptions: database error');
@@ -122,5 +117,4 @@ async function routes(fastify: FastifyInstance) {
     });
 }
 
-//ESM
 export default routes;

@@ -36,6 +36,10 @@ export interface ReleaseAsset {
     uploader: GitHubUser;
 }
 
+export type GitHubClient = {
+    getLatestRelease: (repo: string) => Promise<GitHubRelease | null>;
+};
+
 export interface GitHubRelease {
     url: string;
     html_url: string;
