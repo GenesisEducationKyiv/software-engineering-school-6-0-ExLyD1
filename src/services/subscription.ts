@@ -13,7 +13,6 @@ export const subscribe = async (
     email: string,
     repo: string,
     lastSeenTag: string,
-    onBeforeCommit: (confirmToken: string) => Promise<void>,
 ): Promise<string> => {
     const client = await db.connect();
     try {
@@ -23,7 +22,6 @@ export const subscribe = async (
         const repoId = await upsertRepository(client, repo, lastSeenTag);
         const { confirmToken } = await insertSubscription(client, userId, repoId);
 
-        await onBeforeCommit(confirmToken);
         await client.query('COMMIT');
         return confirmToken;
     } catch (err) {

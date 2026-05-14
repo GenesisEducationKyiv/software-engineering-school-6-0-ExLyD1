@@ -45,9 +45,8 @@ async function routes(fastify: FastifyInstance) {
             }
 
             try {
-                await subscribe(fastify.pg, email, repo, latestRelease.tag_name, (token) =>
-                    fastify.mailer.sendConfirmationEmail(email, token),
-                );
+                const token = await subscribe(fastify.pg, email, repo, latestRelease.tag_name);
+                await fastify.mailer.sendConfirmationEmail(email, token);
             } catch (err) {
                 if (err instanceof AlreadySubscribedError) {
                     return reply

@@ -40,25 +40,23 @@ beforeEach(() => {
 });
 
 describe('subscribe', () => {
-    const noop = vi.fn().mockResolvedValue(undefined);
-
     it('returns a v4 UUID confirm token', async () => {
         const db = buildDb(subscribeQueryMock());
-        const token = await subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop);
+        const token = await subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0');
         expect(token).toMatch(UUID_REGEX);
     });
 
     it('executes 7 DB queries: BEGIN, upsert user, select user, upsert repo, select repo, insert subscription, COMMIT', async () => {
         const mock = subscribeQueryMock();
         const db = buildDb(mock);
-        await subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop);
+        await subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0');
         expect(mock).toHaveBeenCalledTimes(7);
     });
 
     it('throws AlreadySubscribedError when pg returns unique violation (code 23505)', async () => {
         const err = Object.assign(new Error('unique violation'), { code: '23505' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0')).rejects.toThrow(
             AlreadySubscribedError,
         );
     });
@@ -66,7 +64,7 @@ describe('subscribe', () => {
     it('AlreadySubscribedError message describes the conflict', async () => {
         const err = Object.assign(new Error('unique violation'), { code: '23505' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0')).rejects.toThrow(
             'Email already subscribed to this repository',
         );
     });
@@ -74,32 +72,9 @@ describe('subscribe', () => {
     it('re-throws non-duplicate DB errors without wrapping', async () => {
         const err = Object.assign(new Error('connection refused'), { code: '08006' });
         const db = buildDb(subscribeQueryMock(err));
-        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', noop)).rejects.toThrow(
+        await expect(subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0')).rejects.toThrow(
             'connection refused',
         );
-    });
-
-    it('rolls back and throws when onBeforeCommit callback throws (e.g. email failure)', async () => {
-        const emailError = new Error('SMTP failure');
-        const failingCallback = vi.fn().mockRejectedValue(emailError);
-
-        const m = vi.fn();
-        m.mockResolvedValueOnce(null); // BEGIN
-        m.mockResolvedValueOnce(null); // INSERT users
-        m.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // SELECT users
-        m.mockResolvedValueOnce(null); // INSERT repositories
-        m.mockResolvedValueOnce({ rows: [{ id: 2 }] }); // SELECT repositories
-        m.mockResolvedValueOnce(null); // INSERT subscriptions
-        m.mockResolvedValueOnce(null); // ROLLBACK
-        const db = buildDb(m);
-
-        await expect(
-            subscribe(db, 'user@example.com', 'org/repo', 'v1.0.0', failingCallback),
-        ).rejects.toThrow('SMTP failure');
-
-        const calls = m.mock.calls.map((c) => c[0] as string);
-        expect(calls).not.toContain('COMMIT');
-        expect(calls[calls.length - 1]).toBe('ROLLBACK');
     });
 });
 
