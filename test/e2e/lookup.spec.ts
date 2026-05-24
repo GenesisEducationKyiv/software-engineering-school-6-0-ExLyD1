@@ -11,10 +11,6 @@ async function apiSubscribe(email: string, repo: string): Promise<Response> {
     });
 }
 
-async function apiConfirm(token: string): Promise<Response> {
-    return fetch(`${BASE_URL}/api/confirm/${token}`);
-}
-
 test.describe('Subscriptions lookup', () => {
     test.beforeEach(async ({ page }) => {
         await page.goto('/');

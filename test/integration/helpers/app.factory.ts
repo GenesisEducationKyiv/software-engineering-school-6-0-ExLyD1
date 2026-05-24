@@ -6,7 +6,11 @@ import subscriptionRoutes from '../../../src/controllers/subscription.ts';
 import healthRoutes from '../../../src/controllers/health.ts';
 import { runMigrations } from '../../../src/database/migrate.ts';
 import { createGitHubClient } from '../../../src/clients/index.ts';
-import type { GitHubClient } from '../../../src/types/index.ts';
+import type {
+    ConfirmationMailer,
+    GitHubClient,
+    NotificationMailer,
+} from '../../../src/types/index.ts';
 
 export type MockMailer = {
     sendConfirmationEmail: Mock;
@@ -20,27 +24,13 @@ export type BuildTestAppOptions = {
     dbUrl?: string;
 };
 
-declare module 'fastify' {
-    interface FastifyInstance {
-        mailer: {
-            sendConfirmationEmail: (email: string, token: string) => Promise<void>;
-            sendReleaseNotification: (
-                email: string,
-                repo: string,
-                tag: string,
-                unsubscribeToken: string,
-            ) => Promise<void>;
-        };
-        github: GitHubClient;
-    }
-}
-
 export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<FastifyInstance> {
     const {
         mailerOverride,
         githubOverride,
         apiKey = 'test-api-key',
-        dbUrl = process.env.TEST_DB_URL ?? 'postgres://test:test@localhost:5433/github_notifier_test',
+        dbUrl = process.env.TEST_DB_URL ??
+            'postgres://test:test@localhost:5433/github_notifier_test',
     } = options;
 
     const config = {
@@ -59,7 +49,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<F
 
     fastify.register(fastifyPostgres, { connectionString: config.databaseUrl });
 
-    const mailer = mailerOverride ?? {
+    const mailer: ConfirmationMailer & NotificationMailer = mailerOverride ?? {
         sendConfirmationEmail: async () => {},
         sendReleaseNotification: async () => {},
     };

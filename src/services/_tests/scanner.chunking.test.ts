@@ -9,7 +9,9 @@ function makeRepo(id: number): WatchedRepo {
 }
 
 function makeGithub(tag = 'v2.0.0'): GitHubClient {
-    return { getLatestRelease: vi.fn().mockResolvedValue({ tag_name: tag, name: `Release ${tag}` }) };
+    return {
+        getLatestRelease: vi.fn().mockResolvedValue({ tag_name: tag, name: `Release ${tag}` }),
+    };
 }
 
 const silentLog = { info: vi.fn(), error: vi.fn() };

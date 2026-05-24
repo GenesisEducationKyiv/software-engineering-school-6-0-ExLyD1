@@ -16,8 +16,11 @@ import {
     deleteSubscription,
     getSubscriptionsByEmail,
 } from '../../services/subscription.ts';
-import { AlreadySubscribedError } from '../../errors/index.ts';
-import { GitHubApiError, InvalidRepoFormatError } from '../../errors/index.ts';
+import {
+    AlreadySubscribedError,
+    GitHubApiError,
+    InvalidRepoFormatError,
+} from '../../errors/index.ts';
 import routes from '../subscription.ts';
 import type { GitHubRelease } from '../../types/index.ts';
 
@@ -157,7 +160,9 @@ describe('POST /api/subscribe', () => {
             payload: { email: 'user@example.com', repo: '-invalid/repo' },
         });
         expect(response.statusCode).toBe(400);
-        expect(response.json()).toMatchObject({ error: expect.stringContaining('Invalid repository') });
+        expect(response.json()).toMatchObject({
+            error: expect.stringContaining('Invalid repository'),
+        });
     });
 
     it('responds 200 on success and calls mailer', async () => {
@@ -345,7 +350,12 @@ describe('GET /api/subscriptions', () => {
 
     it('responds 200 with subscription rows', async () => {
         const rows = [
-            { email: 'user@example.com', repo: 'org/repo', confirmed: true, last_seen_tag: 'v1.0.0' },
+            {
+                email: 'user@example.com',
+                repo: 'org/repo',
+                confirmed: true,
+                last_seen_tag: 'v1.0.0',
+            },
         ];
         mockGetSubscriptionsByEmail.mockResolvedValue(rows as never);
         const app = buildApp();

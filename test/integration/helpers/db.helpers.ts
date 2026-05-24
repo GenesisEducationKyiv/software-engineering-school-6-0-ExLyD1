@@ -2,9 +2,7 @@ import type { PostgresDb } from '@fastify/postgres';
 import type { SubscriptionRow } from '../../../src/types/index.ts';
 
 export async function truncateAllTables(db: PostgresDb): Promise<void> {
-    await db.query(
-        `TRUNCATE users, repositories, subscriptions RESTART IDENTITY CASCADE`,
-    );
+    await db.query(`TRUNCATE users, repositories, subscriptions RESTART IDENTITY CASCADE`);
 }
 
 type SeedResult = {
