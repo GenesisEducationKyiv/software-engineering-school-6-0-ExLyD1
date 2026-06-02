@@ -15,6 +15,7 @@ jobs:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             RESEND_API_KEY: test-resend-key
             SMTP_FROM: test@example.com
+            MAILER_MODE: stub
             SCANNER_INTERVAL_MS: '9999999'
         services:
             postgres:
