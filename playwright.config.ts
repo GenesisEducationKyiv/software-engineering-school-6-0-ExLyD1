@@ -17,6 +17,8 @@ export default defineConfig({
         url: 'http://localhost:3000/health',
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
         env: {
             DATABASE_URL:
                 process.env.DATABASE_URL ??
