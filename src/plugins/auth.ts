@@ -4,7 +4,12 @@ import type { AppConfig } from '../config.ts';
 
 // Non-/api paths are already allowed by the startsWith('/api') guard below.
 // Only list /api/* prefixes that should bypass auth.
-const PUBLIC_PATHS = new Set(['/api/subscriptions', '/api/confirm', '/api/unsubscribe']);
+const PUBLIC_PATHS = new Set([
+    '/api/subscribe',
+    '/api/subscriptions',
+    '/api/confirm',
+    '/api/unsubscribe',
+]);
 
 const authPlugin = async (fastify: FastifyInstance, config: AppConfig) => {
     fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {

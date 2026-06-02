@@ -18,6 +18,7 @@ function buildApp() {
     });
 
     app.get('/api/protected', async (_req, reply) => reply.send({ ok: true }));
+    app.post('/api/subscribe', async (_req, reply) => reply.send({ ok: true }));
     app.get('/api/subscriptions', async (_req, reply) => reply.send({ ok: true }));
     app.get('/api/confirm/:token', async (_req, reply) => reply.send({ ok: true }));
     app.get('/api/unsubscribe/:token', async (_req, reply) => reply.send({ ok: true }));
@@ -51,6 +52,12 @@ describe('auth plugin', () => {
             url: '/api/protected',
             headers: { 'x-api-key': TEST_API_KEY },
         });
+        expect(res.statusCode).toBe(200);
+    });
+
+    it('allows /api/subscribe without api key', async () => {
+        const app = buildApp();
+        const res = await app.inject({ method: 'POST', url: '/api/subscribe' });
         expect(res.statusCode).toBe(200);
     });
 

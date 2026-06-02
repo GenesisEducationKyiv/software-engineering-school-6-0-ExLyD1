@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-const API_KEY = process.env.API_KEY ?? 'test-api-key';
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000';
 
 async function apiSubscribe(email: string, repo: string): Promise<Response> {
     return fetch(`${BASE_URL}/api/subscribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, repo }),
     });
 }
