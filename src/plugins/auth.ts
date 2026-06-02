@@ -2,12 +2,13 @@ import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from '../config.ts';
 
+// Non-/api paths are already allowed by the startsWith('/api') guard below.
+// Only list /api/* prefixes that should bypass auth.
 const PUBLIC_PATHS = new Set([
+    '/api/subscribe',
     '/api/subscriptions',
     '/api/confirm',
     '/api/unsubscribe',
-    '/health',
-    '/',
 ]);
 
 const authPlugin = async (fastify: FastifyInstance, config: AppConfig) => {

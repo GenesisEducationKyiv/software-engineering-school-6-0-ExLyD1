@@ -1,11 +1,11 @@
-name: Lint
+name: Unit Tests
 on:
     push:
         branches: [main]
     pull_request:
         branches: [main]
 jobs:
-    lint:
+    unit:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -14,4 +14,9 @@ jobs:
                   node-version: '22'
                   cache: 'npm'
             - run: npm ci
-            - run: npm run lint
+            - run: npm run test:unit
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: coverage-unit
+                  path: coverage/

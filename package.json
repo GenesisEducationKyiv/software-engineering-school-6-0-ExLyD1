@@ -5,10 +5,18 @@
     "main": "index.js",
     "scripts": {
         "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/app.ts",
-        "build": "tsc",
+        "build": "tsc && rm -rf dist/database/migrations && cp -R src/database/migrations dist/database/migrations",
         "start": "node dist/app.js",
         "migrate": "ts-node src/database/migrate.ts",
         "test": "vitest run",
+        "test:unit": "vitest run",
+        "test:unit:watch": "vitest",
+        "test:integration": "docker compose -f docker-compose.test.yml up -d --wait && npm run test:integration:ci; status=$?; docker compose -f docker-compose.test.yml down; exit $status",
+        "test:integration:ci": "vitest run --config vitest.config.integration.ts",
+        "test:e2e": "docker compose -f docker-compose.test.yml up -d --wait && npm run build && npm run test:e2e:ci; status=$?; docker compose -f docker-compose.test.yml down; exit $status",
+        "test:e2e:ci": "playwright test",
+        "test:coverage": "vitest run --coverage --config vitest.config.coverage.ts",
+        "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
         "test:watch": "vitest",
         "lint": "eslint src",
         "lint:fix": "eslint src --fix"
@@ -29,15 +37,19 @@
         "resend": "^6.10.0"
     },
     "devDependencies": {
-        "@types/node": "^25.5.2",
+        "@playwright/test": "^1.60.0",
+        "@types/node": "^25.9.1",
         "@types/nodemailer": "^8.0.0",
         "@types/pg": "^8.20.0",
         "@typescript-eslint/eslint-plugin": "^8.58.1",
+        "@vitest/coverage-v8": "^4.1.6",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
+        "msw": "^2.14.6",
         "nodemon": "^3.1.14",
         "ts-node": "^10.9.2",
         "typescript": "^6.0.2",
-        "vitest": "^4.1.4"
+        "vitest": "^4.1.4",
+        "wait-on": "^9.0.10"
     }
 }
