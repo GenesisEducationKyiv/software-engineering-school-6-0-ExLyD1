@@ -5,7 +5,7 @@
     "main": "index.js",
     "scripts": {
         "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/app.ts",
-        "build": "tsc",
+        "build": "tsc && rm -rf dist/database/migrations && cp -R src/database/migrations dist/database/migrations",
         "start": "node dist/app.js",
         "migrate": "ts-node src/database/migrate.ts",
         "test": "vitest run",

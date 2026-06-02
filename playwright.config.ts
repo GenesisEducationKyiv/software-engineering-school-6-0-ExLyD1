@@ -29,6 +29,7 @@ export default defineConfig({
             RESEND_API_KEY: process.env.RESEND_API_KEY ?? 'test-resend-key',
             SMTP_FROM: process.env.SMTP_FROM ?? 'test@example.com',
             MAILER_MODE: process.env.MAILER_MODE ?? 'stub',
+            GITHUB_MODE: process.env.GITHUB_MODE ?? 'stub',
             SCANNER_INTERVAL_MS: process.env.SCANNER_INTERVAL_MS ?? '9999999',
         },
     },
