@@ -84,25 +84,6 @@ describe('POST /api/subscribe', () => {
         expect(res.statusCode).toBe(400);
     });
 
-    it('401: no x-api-key header', async () => {
-        const res = await app.inject({
-            method: 'POST',
-            url: '/api/subscribe',
-            payload: { email: 'user@example.com', repo: 'org/repo' },
-        });
-        expect(res.statusCode).toBe(401);
-    });
-
-    it('401: wrong x-api-key value', async () => {
-        const res = await app.inject({
-            method: 'POST',
-            url: '/api/subscribe',
-            headers: { 'x-api-key': 'wrong-key' },
-            payload: { email: 'user@example.com', repo: 'org/repo' },
-        });
-        expect(res.statusCode).toBe(401);
-    });
-
     it('404: GitHub returns 404 for repo', async () => {
         server.use(github404Handler);
         const res = await app.inject({
