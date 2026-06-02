@@ -40,13 +40,7 @@ jobs:
             - run: npm ci
             - run: npx playwright install --with-deps chromium
             - run: npm run build
-            - name: Run migrations
-              run: DATABASE_URL=postgres://test:test@localhost:5432/github_notifier_test node -e "import('./dist/database/migrate.js').then(m => m.runMigrations ? console.log('use app start') : console.log('ok'))" || true
-            - name: Start app
-              run: node dist/app.js &
-            - name: Wait for app ready
-              run: npx wait-on http://localhost:3000/health --timeout 30000
-            - run: npm run test:e2e
+            - run: npm run test:e2e:ci
             - uses: actions/upload-artifact@v4
               if: failure()
               with:

@@ -12,4 +12,22 @@ export default defineConfig({
         trace: 'retain-on-failure',
     },
     projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+    webServer: {
+        command: 'node dist/app.js',
+        url: 'http://localhost:3000/health',
+        reuseExistingServer: !process.env.CI,
+        timeout: 60_000,
+        env: {
+            DATABASE_URL:
+                process.env.DATABASE_URL ??
+                'postgres://test:test@localhost:5433/github_notifier_test',
+            API_KEY: process.env.API_KEY ?? 'test-api-key',
+            BASE_URL: process.env.BASE_URL ?? 'http://localhost:3000',
+            GITHUB_BASE_URL: process.env.GITHUB_BASE_URL ?? 'https://api.github.com',
+            RESEND_API_KEY: process.env.RESEND_API_KEY ?? 'test-resend-key',
+            SMTP_FROM: process.env.SMTP_FROM ?? 'test@example.com',
+            MAILER_MODE: process.env.MAILER_MODE ?? 'stub',
+            SCANNER_INTERVAL_MS: process.env.SCANNER_INTERVAL_MS ?? '9999999',
+        },
+    },
 });
