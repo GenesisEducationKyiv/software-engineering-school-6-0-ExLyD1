@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { FastifyBaseLogger } from 'fastify';
 import { runScanCycle } from '../scanner.ts';
 import { GitHubApiError } from '../../errors/index.ts';
 import type {
@@ -34,7 +35,7 @@ function buildDeps(watchedRepos: WatchedRepo[] = []) {
         sendConfirmationEmail: vi.fn(),
         sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
     };
-    const log = { info: vi.fn(), error: vi.fn() };
+    const log = { info: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger;
     const db = {} as DbPool;
 
     return { github, mailer, log, db };
@@ -146,6 +147,9 @@ describe('runScanCycle', () => {
 
         expect(github.getLatestRelease).toHaveBeenCalledTimes(2);
         expect(mailer.sendReleaseNotification).not.toHaveBeenCalled();
-        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('aborting scan cycle'));
+        expect(log.error).toHaveBeenCalledWith(
+            expect.objectContaining({ repository: 'rate-limited/repo' }),
+            expect.stringContaining('aborting scan cycle'),
+        );
     });
 });

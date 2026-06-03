@@ -98,4 +98,16 @@ describe('loadConfig', () => {
         stubValidEnv({ SCANNER_INTERVAL_MS: 'abc' });
         expect(() => loadConfig()).toThrow('SCANNER_INTERVAL_MS');
     });
+
+    it('logLevel defaults to info when LOG_LEVEL is not set', () => {
+        stubValidEnv();
+        vi.stubEnv('LOG_LEVEL', '');
+        const config = loadConfig();
+        expect(config.logLevel).toBe('info');
+    });
+
+    it('throws when LOG_LEVEL is not a recognised level', () => {
+        stubValidEnv({ LOG_LEVEL: 'verbose' });
+        expect(() => loadConfig()).toThrow('LOG_LEVEL');
+    });
 });

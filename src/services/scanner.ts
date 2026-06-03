@@ -5,12 +5,8 @@ import {
     getConfirmedSubscribers,
     updateLastSeenTag,
 } from '../repositories/scanner.repository.ts';
+import type { FastifyBaseLogger } from 'fastify';
 import { SCAN_CHUNK_SIZE } from '../constants/index.ts';
-
-type Logger = {
-    info: (msg: string) => void;
-    error: (msg: string | object, ...args: unknown[]) => void;
-};
 
 type RepoUpdate = {
     repo: WatchedRepo;
@@ -20,7 +16,7 @@ type RepoUpdate = {
 export const fetchRepoUpdates = async (
     repos: WatchedRepo[],
     github: GitHubClient,
-    log: Logger,
+    log: FastifyBaseLogger,
 ): Promise<RepoUpdate[] | 'rate_limited'> => {
     type ChunkResult =
         | { status: 'rate_limited'; repo: WatchedRepo }
@@ -37,7 +33,10 @@ export const fetchRepoUpdates = async (
                 try {
                     const release = await github.getLatestRelease(repo.owner_repo);
                     if (!release) {
-                        log.info(`Scanner: no releases found for ${repo.owner_repo}, skipping`);
+                        log.info(
+                            { repository: repo.owner_repo },
+                            'Scanner: no releases found, skipping',
+                        );
                         return { status: 'skipped' };
                     }
                     if (repo.last_seen_tag === release.tag_name) {
@@ -49,8 +48,8 @@ export const fetchRepoUpdates = async (
                         return { status: 'rate_limited', repo };
                     }
                     log.error(
-                        { err },
-                        `Scanner: failed to fetch release for ${repo.owner_repo}, skipping`,
+                        { err, repository: repo.owner_repo },
+                        'Scanner: failed to fetch release, skipping',
                     );
                     return { status: 'skipped' };
                 }
@@ -63,7 +62,8 @@ export const fetchRepoUpdates = async (
         );
         if (rateLimited) {
             log.error(
-                `Scanner: rate limit hit for ${rateLimited.repo.owner_repo}, aborting scan cycle`,
+                { repository: rateLimited.repo.owner_repo },
+                'Scanner: rate limit hit, aborting scan cycle',
             );
             return 'rate_limited';
         }
@@ -82,14 +82,17 @@ export const persistAndNotify = async (
     updates: RepoUpdate[],
     db: DbPool,
     mailer: NotificationMailer,
-    log: Logger,
+    log: FastifyBaseLogger,
 ): Promise<void> => {
     for (const { repo, latestTag } of updates) {
-        log.info(`Scanner: new release ${latestTag} for ${repo.owner_repo}`);
+        log.info({ repository: repo.owner_repo, tag: latestTag }, 'Scanner: new release detected');
 
         const subscribers = await getConfirmedSubscribers(db, repo.id);
 
-        log.info(`Scanner: notifying ${subscribers.length} subscriber(s) for ${repo.owner_repo}`);
+        log.info(
+            { repository: repo.owner_repo, subscriberCount: subscribers.length },
+            'Scanner: notifying subscribers',
+        );
 
         await updateLastSeenTag(db, repo.id, latestTag);
 
@@ -102,7 +105,10 @@ export const persistAndNotify = async (
                     sub.unsubscribe_token,
                 );
             } catch (err) {
-                log.error({ err }, `Scanner: failed to notify ${sub.email} for ${repo.owner_repo}`);
+                log.error(
+                    { err, repository: repo.owner_repo },
+                    'Scanner: failed to notify subscriber',
+                );
             }
         }
     }
@@ -112,7 +118,7 @@ export const runScanCycle = async (
     db: DbPool,
     github: GitHubClient,
     mailer: NotificationMailer,
-    log: Logger,
+    log: FastifyBaseLogger,
 ): Promise<void> => {
     log.info('Scanner: starting scan cycle');
 
@@ -132,7 +138,7 @@ export const startScanner = (
     db: DbPool,
     github: GitHubClient,
     mailer: NotificationMailer,
-    log: Logger,
+    log: FastifyBaseLogger,
     intervalMs: number,
 ): ReturnType<typeof setInterval> => {
     const run = async () => {

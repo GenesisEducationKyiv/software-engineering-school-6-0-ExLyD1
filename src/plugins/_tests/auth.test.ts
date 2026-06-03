@@ -15,6 +15,7 @@ function buildApp() {
         baseUrl: '',
         scannerIntervalMs: 0,
         port: 3000,
+        logLevel: 'info',
     });
 
     app.get('/api/protected', async (_req, reply) => reply.send({ ok: true }));

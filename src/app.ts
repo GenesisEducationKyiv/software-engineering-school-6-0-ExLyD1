@@ -1,9 +1,10 @@
 // ESM
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
 import { loadConfig } from './config.ts';
 import subscriptionRoutes from './controllers/subscription.ts';
@@ -28,7 +29,24 @@ try {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({
+    genReqId: () => randomUUID(),
+    requestIdLogLabel: 'requestId',
+    logger: {
+        level: config.logLevel,
+        base: { service: { name: 'github-release-notifier' }, component: 'api' },
+        serializers: {
+            req(request: FastifyRequest) {
+                return {
+                    method: request.method,
+                    url: request.url,
+                    userAgent: request.headers['user-agent'],
+                    remoteAddress: request.ip,
+                };
+            },
+        },
+    },
+});
 
 fastify.register(fastifyRateLimit, { global: false });
 
@@ -58,20 +76,21 @@ fastify.setErrorHandler((error: FastifyError, _request, reply) => {
 fastify.addHook('onReady', async () => {
     await runMigrations(fastify);
 
+    const scannerLog = fastify.log.child({ component: 'scanner' });
     const timer = startScanner(
         fastify.pg,
         fastify.github,
         fastify.mailer,
-        fastify.log,
+        scannerLog,
         config.scannerIntervalMs,
     );
 
     fastify.addHook('onClose', async () => {
         clearInterval(timer);
-        fastify.log.info('Scanner: stopped');
+        scannerLog.info('Scanner: stopped');
     });
 
-    fastify.log.info(`Scanner: started, interval ${config.scannerIntervalMs / 1000}s`);
+    scannerLog.info(`Scanner: started, interval ${config.scannerIntervalMs / 1000}s`);
 });
 
 fastify.listen({ port: config.port, host: '0.0.0.0' }, function (err) {

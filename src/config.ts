@@ -1,3 +1,5 @@
+import type { LogLevel } from 'fastify';
+
 export type AppConfig = {
     databaseUrl: string;
     githubBaseUrl: string;
@@ -8,7 +10,20 @@ export type AppConfig = {
     apiKey: string;
     scannerIntervalMs: number;
     port: number;
+    logLevel: LogLevel;
 };
+
+const VALID_LOG_LEVELS = new Set<LogLevel>([
+    'trace',
+    'debug',
+    'info',
+    'warn',
+    'error',
+    'fatal',
+    'silent',
+]);
+
+const isLogLevel = (value: string): value is LogLevel => VALID_LOG_LEVELS.has(value as LogLevel);
 
 export const loadConfig = (): AppConfig => {
     const required = {
@@ -35,6 +50,13 @@ export const loadConfig = (): AppConfig => {
         );
     }
 
+    const logLevel = process.env.LOG_LEVEL || 'info';
+    if (!isLogLevel(logLevel)) {
+        throw new Error(
+            `Invalid env var: LOG_LEVEL must be one of ${[...VALID_LOG_LEVELS].join(', ')}`,
+        );
+    }
+
     return {
         databaseUrl: required.databaseUrl!,
         githubBaseUrl: required.githubBaseUrl!,
@@ -45,5 +67,6 @@ export const loadConfig = (): AppConfig => {
         apiKey: required.apiKey!,
         scannerIntervalMs,
         port: parseInt(process.env.PORT || '3000', 10),
+        logLevel,
     };
 };
