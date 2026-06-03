@@ -93,6 +93,9 @@ Logstash, and explored in Kibana. `docker compose up` also starts Elasticsearch
   `component: api | scanner`. Verbosity is controlled by `LOG_LEVEL`.
 - The Kibana data view and dashboard are reproducible from
   [`config/kibana/dashboard.ndjson`](config/kibana/dashboard.ndjson).
+- RED metrics (`prom-client`) are exposed at `/metrics`, scraped by Prometheus
+  (`:9090`), and visualized in an auto-provisioned Grafana dashboard
+  (`:3001`, admin/admin).
 
 See [`docs/observability.md`](docs/observability.md) for the full pipeline, field
 reference, and the dashboard import command.

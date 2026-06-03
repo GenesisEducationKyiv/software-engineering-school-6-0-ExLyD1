@@ -116,4 +116,60 @@ HTTP `statusCode` distribution.
 
 ## Metrics (RED) → Prometheus → Grafana
 
-_Coming next._
+The app is instrumented with RED metrics (Rate, Errors, Duration) via `prom-client`
+and exposes them at `/metrics`. Unlike logs (which are pushed), metrics are
+**pulled**: the app only exposes `/metrics`, and Prometheus scrapes it on a
+schedule. Grafana then queries Prometheus.
+
+```
+app (/metrics)  ◄── scrape (15s) ── Prometheus  ◄── query ── Grafana (dashboard)
+```
+
+### Run
+
+`docker compose up -d` also starts:
+
+- App metrics: http://127.0.0.1:3000/metrics
+- Prometheus: http://127.0.0.1:9090 (targets at `/targets`)
+- Grafana: http://127.0.0.1:3001 (admin / admin)
+
+### Metrics
+
+| Metric                          | Type      | Labels                                        | RED      |
+| ------------------------------- | --------- | --------------------------------------------- | -------- |
+| `http_requests_total`           | counter   | method, route, status_code, status_class      | Rate     |
+| `http_request_errors_total`     | counter   | method, route, status_code                     | Errors   |
+| `http_request_duration_seconds` | histogram | method, route, status_code                     | Duration |
+
+Plus default Node.js process metrics via `collectDefaultMetrics()`.
+
+> **Cardinality:** `route` is the **route template** (`/api/confirm/:token`), not
+> the raw path, so unique tokens do not explode the number of series. Unmatched
+> paths collapse to `route="unknown"`. The `/metrics` endpoint does not measure
+> itself.
+
+### Prometheus
+
+`config/prometheus/prometheus.yml` scrapes `app:3000` every 15s (job
+`github-release-notifier`). Check the target at http://127.0.0.1:9090/targets.
+
+```promql
+# Rate
+sum(rate(http_requests_total[1m]))
+# Error ratio
+sum(rate(http_request_errors_total[1m])) / sum(rate(http_requests_total[1m]))
+# p95 latency
+histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))
+```
+
+### Grafana
+
+Grafana is provisioned automatically — no manual setup:
+
+- Datasource: `config/grafana/provisioning/datasources/prometheus.yml`
+- Dashboard provider: `config/grafana/provisioning/dashboards/dashboards.yml`
+- Dashboard: `config/grafana/dashboards/red-metrics.json` —
+  "GitHub Release Notifier — RED Metrics" (request rate, rate by route, error
+  ratio, p50/p95/p99 latency, rate by status class)
+
+Open http://127.0.0.1:3001 (admin / admin); the dashboard is already there.
