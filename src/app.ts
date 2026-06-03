@@ -13,6 +13,7 @@ import dbConnector from './plugins/db.ts';
 import mailerConnector from './plugins/mailer.ts';
 import githubConnector from './plugins/github.ts';
 import authPlugin from './plugins/auth.ts';
+import metricsPlugin from './plugins/metrics.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './services/scanner.ts';
 
@@ -47,6 +48,8 @@ const fastify = Fastify({
         },
     },
 });
+
+fastify.register(metricsPlugin);
 
 fastify.register(fastifyRateLimit, { global: false });
 
