@@ -3,6 +3,7 @@ import { loadConfig } from './config.ts';
 import { connectRabbit } from './rabbit.ts';
 import { createMailer } from './mailer.ts';
 import { handleCommand } from './handler.ts';
+import { logger } from './logger.ts';
 import { EMAIL_QUEUE, type EmailCommand } from './contract.ts';
 
 const main = async () => {
@@ -12,8 +13,7 @@ const main = async () => {
 
     const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
 
-    // eslint-disable-next-line no-console
-    console.log(`notification-service: connected, consuming "${EMAIL_QUEUE}"`);
+    logger.info(`Connected, consuming "${EMAIL_QUEUE}"`);
 
     await channel.consume(EMAIL_QUEUE, (msg) => {
         if (!msg) {
@@ -24,13 +24,12 @@ const main = async () => {
                 const command = JSON.parse(msg.content.toString()) as EmailCommand;
                 await handleCommand(mailer, config.baseUrl, command);
                 channel.ack(msg);
-                // eslint-disable-next-line no-console
-                console.log(
-                    `notification-service: delivered ${command.type} email to ${command.email}`,
+                logger.info(
+                    { emailType: command.type, recipient: command.email },
+                    'Email delivered',
                 );
             } catch (err) {
-                // eslint-disable-next-line no-console
-                console.error('notification-service: failed to process message', err);
+                logger.error({ err }, 'Failed to process message');
                 // Drop the poison message instead of requeuing it forever.
                 channel.nack(msg, false, false);
             }
@@ -50,7 +49,6 @@ const main = async () => {
 };
 
 main().catch((err: unknown) => {
-    // eslint-disable-next-line no-console
-    console.error('notification-service: fatal startup error', err);
+    logger.error({ err }, 'Fatal startup error');
     process.exit(1);
 });

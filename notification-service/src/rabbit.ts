@@ -1,5 +1,6 @@
 import { connect } from 'amqplib';
 import { EMAIL_QUEUE } from './contract.ts';
+import { logger } from './logger.ts';
 
 export type RabbitConnection = Awaited<ReturnType<typeof connect>>;
 export type RabbitChannel = Awaited<ReturnType<RabbitConnection['createChannel']>>;
@@ -27,10 +28,7 @@ export const connectRabbit = async (
             if (attempt === retries) {
                 throw err;
             }
-            // eslint-disable-next-line no-console
-            console.warn(
-                `notification-service: RabbitMQ not ready (attempt ${attempt}/${retries}), retrying in ${delayMs}ms`,
-            );
+            logger.warn(`RabbitMQ not ready (attempt ${attempt}/${retries}), retrying in ${delayMs}ms`);
             await sleep(delayMs);
         }
     }
