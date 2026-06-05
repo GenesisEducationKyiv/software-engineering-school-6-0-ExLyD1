@@ -26,7 +26,24 @@ const mailerConnector = async (fastify: FastifyInstance, config: AppConfig) => {
     const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
     fastify.decorate('mailer', createPublishingMailer(channel));
 
+    let intentionalClose = false;
+
+    // Surface broker errors instead of letting them crash as an unhandled
+    // 'error' event, and if the connection drops unexpectedly exit so the
+    // orchestrator restarts the app and it reconnects via the startup retry.
+    connection.on('error', (err: unknown) => {
+        fastify.log.error({ err }, 'RabbitMQ connection error');
+    });
+    connection.on('close', () => {
+        if (intentionalClose) {
+            return;
+        }
+        fastify.log.error('RabbitMQ connection closed unexpectedly — exiting to be restarted');
+        process.exit(1);
+    });
+
     fastify.addHook('onClose', async () => {
+        intentionalClose = true;
         await channel.close();
         await connection.close();
     });

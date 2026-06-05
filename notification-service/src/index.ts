@@ -15,6 +15,21 @@ const main = async () => {
 
     logger.info(`Connected, consuming "${EMAIL_QUEUE}"`);
 
+    let shuttingDown = false;
+
+    // If the broker connection drops while we are running, exit so the
+    // orchestrator (docker restart: on-failure) restarts us and we reconnect via
+    // the startup retry. Handling 'error' also prevents an unhandled-error crash.
+    const onConnectionLost = (err?: unknown) => {
+        if (shuttingDown) {
+            return;
+        }
+        logger.error({ err }, 'RabbitMQ connection lost — exiting to be restarted');
+        process.exit(1);
+    };
+    connection.on('error', (err: unknown) => onConnectionLost(err));
+    connection.on('close', () => onConnectionLost());
+
     await channel.consume(EMAIL_QUEUE, (msg) => {
         if (!msg) {
             return;
@@ -37,6 +52,7 @@ const main = async () => {
     });
 
     const shutdown = async () => {
+        shuttingDown = true;
         try {
             await channel.close();
             await connection.close();
