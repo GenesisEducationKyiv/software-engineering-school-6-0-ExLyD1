@@ -24,6 +24,10 @@ const main = async () => {
                 const command = JSON.parse(msg.content.toString()) as EmailCommand;
                 await handleCommand(mailer, config.baseUrl, command);
                 channel.ack(msg);
+                // eslint-disable-next-line no-console
+                console.log(
+                    `notification-service: delivered ${command.type} email to ${command.email}`,
+                );
             } catch (err) {
                 // eslint-disable-next-line no-console
                 console.error('notification-service: failed to process message', err);

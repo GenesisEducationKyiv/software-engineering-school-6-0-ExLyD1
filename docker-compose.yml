@@ -16,6 +16,7 @@ services:
 
     app:
         build: .
+        restart: on-failure
         env_file: .env
         environment:
             DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -42,7 +43,7 @@ services:
             - '5672:5672'
             - '15672:15672'
         healthcheck:
-            test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+            test: ['CMD', 'rabbitmq-diagnostics', 'check_port_connectivity']
             interval: 10s
             timeout: 5s
             retries: 10
@@ -50,6 +51,7 @@ services:
 
     notification:
         build: ./notification-service
+        restart: on-failure
         env_file: .env
         environment:
             RABBITMQ_URL: amqp://rabbitmq:5672
