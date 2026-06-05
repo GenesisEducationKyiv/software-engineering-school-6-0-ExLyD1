@@ -1,0 +1,35 @@
+import fastifyPlugin from 'fastify-plugin';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { AppConfig } from '../config/config.ts';
+
+// Non-/api paths are already allowed by the startsWith('/api') guard below.
+// Only list /api/* prefixes that should bypass auth.
+const PUBLIC_PATHS = new Set([
+    '/api/subscribe',
+    '/api/subscriptions',
+    '/api/confirm',
+    '/api/unsubscribe',
+]);
+
+const authPlugin = async (fastify: FastifyInstance, config: AppConfig) => {
+    fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {
+        const path = request.raw.url ?? request.url;
+
+        if (!path.startsWith('/api')) {
+            return;
+        }
+        for (const p of PUBLIC_PATHS) {
+            if (path.startsWith(p)) {
+                return;
+            }
+        }
+
+        const headersApiKey = String(request.headers['x-api-key'] ?? '');
+        if (headersApiKey !== config.apiKey) {
+            request.log?.warn({ ip: request.ip, path }, 'Unauthorized request');
+            return reply.status(401).send({ error: 'Unauthorized' });
+        }
+    });
+};
+
+export default fastifyPlugin(authPlugin);

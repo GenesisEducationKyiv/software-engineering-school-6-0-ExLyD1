@@ -6,16 +6,16 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
-import { loadConfig } from './config.ts';
-import subscriptionRoutes from './controllers/subscription.ts';
-import healthRoutes from './controllers/health.ts';
-import dbConnector from './plugins/db.ts';
-import mailerConnector from './plugins/mailer.ts';
-import githubConnector from './plugins/github.ts';
-import authPlugin from './plugins/auth.ts';
-import metricsPlugin from './plugins/metrics.ts';
+import { loadConfig } from './modules/shared/config/config.ts';
+import subscriptionRoutes from './modules/subscriptions/subscription.controller.ts';
+import healthRoutes from './modules/shared/health/health.controller.ts';
+import dbConnector from './modules/shared/db/db.plugin.ts';
+import mailerConnector from './modules/shared/mailer/mailer.plugin.ts';
+import githubConnector from './modules/shared/github/github.plugin.ts';
+import authPlugin from './modules/shared/auth/auth.plugin.ts';
+import metricsPlugin from './modules/shared/metrics/metrics.plugin.ts';
 import { runMigrations } from './database/migrate.ts';
-import { startScanner } from './services/scanner.ts';
+import { startScanner } from './modules/scanner/scanner.service.ts';
 
 dotenv.config();
 
