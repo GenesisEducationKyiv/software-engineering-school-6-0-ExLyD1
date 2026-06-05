@@ -1,9 +1,9 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
-import { Resend } from 'resend';
-import { createMailer } from './mailer.client.ts';
 import type { ConfirmationMailer, NotificationMailer } from './mailer.types.ts';
 import type { AppConfig } from '../config/config.ts';
+import { connectRabbit } from '../messaging/rabbit.ts';
+import { createPublishingMailer } from './mailer.publisher.ts';
 
 declare module 'fastify' {
     interface FastifyInstance {
@@ -18,12 +18,18 @@ const createStubMailer = (): ConfirmationMailer & NotificationMailer => ({
 
 const mailerConnector = async (fastify: FastifyInstance, config: AppConfig) => {
     if (process.env.MAILER_MODE === 'stub') {
-        fastify.log.warn('Mailer running in STUB mode — no emails will be sent');
+        fastify.log.warn('Mailer running in STUB mode — no commands will be published');
         fastify.decorate('mailer', createStubMailer());
         return;
     }
-    const resend = new Resend(config.resendApiKey);
-    fastify.decorate('mailer', createMailer(resend, config.baseUrl, config.smtpFrom));
+
+    const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
+    fastify.decorate('mailer', createPublishingMailer(channel));
+
+    fastify.addHook('onClose', async () => {
+        await channel.close();
+        await connection.close();
+    });
 };
 
 export default fastifyPlugin(mailerConnector);

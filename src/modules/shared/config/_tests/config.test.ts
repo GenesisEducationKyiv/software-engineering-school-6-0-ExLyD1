@@ -4,9 +4,7 @@ import { loadConfig } from '../config.ts';
 const VALID_ENV = {
     DATABASE_URL: 'postgres://localhost/test',
     GITHUB_BASE_URL: 'https://api.github.com',
-    RESEND_API_KEY: 'resend-key',
-    SMTP_FROM: 'from@example.com',
-    BASE_URL: 'http://localhost:3000',
+    RABBITMQ_URL: 'amqp://localhost:5672',
     API_KEY: 'api-key',
     SCANNER_INTERVAL_MS: '60000',
 };
@@ -32,9 +30,7 @@ describe('loadConfig', () => {
         const config = loadConfig();
         expect(config.databaseUrl).toBe(VALID_ENV.DATABASE_URL);
         expect(config.githubBaseUrl).toBe(VALID_ENV.GITHUB_BASE_URL);
-        expect(config.resendApiKey).toBe(VALID_ENV.RESEND_API_KEY);
-        expect(config.smtpFrom).toBe(VALID_ENV.SMTP_FROM);
-        expect(config.baseUrl).toBe(VALID_ENV.BASE_URL);
+        expect(config.rabbitmqUrl).toBe(VALID_ENV.RABBITMQ_URL);
         expect(config.apiKey).toBe(VALID_ENV.API_KEY);
         expect(config.scannerIntervalMs).toBe(60000);
     });
@@ -49,19 +45,9 @@ describe('loadConfig', () => {
         expect(() => loadConfig()).toThrow('GITHUB_BASE_URL');
     });
 
-    it('throws mentioning RESEND_API_KEY when missing', () => {
-        stubValidEnv({ RESEND_API_KEY: undefined });
-        expect(() => loadConfig()).toThrow('RESEND_API_KEY');
-    });
-
-    it('throws mentioning SMTP_FROM when missing', () => {
-        stubValidEnv({ SMTP_FROM: undefined });
-        expect(() => loadConfig()).toThrow('SMTP_FROM');
-    });
-
-    it('throws mentioning BASE_URL when missing', () => {
-        stubValidEnv({ BASE_URL: undefined });
-        expect(() => loadConfig()).toThrow('BASE_URL');
+    it('throws mentioning RABBITMQ_URL when missing', () => {
+        stubValidEnv({ RABBITMQ_URL: undefined });
+        expect(() => loadConfig()).toThrow('RABBITMQ_URL');
     });
 
     it('throws mentioning API_KEY when missing', () => {

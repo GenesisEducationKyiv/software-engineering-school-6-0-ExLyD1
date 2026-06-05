@@ -4,9 +4,7 @@ export type AppConfig = {
     databaseUrl: string;
     githubBaseUrl: string;
     githubToken?: string;
-    resendApiKey: string;
-    smtpFrom: string;
-    baseUrl: string;
+    rabbitmqUrl: string;
     apiKey: string;
     scannerIntervalMs: number;
     port: number;
@@ -29,9 +27,7 @@ export const loadConfig = (): AppConfig => {
     const required = {
         databaseUrl: process.env.DATABASE_URL,
         githubBaseUrl: process.env.GITHUB_BASE_URL,
-        resendApiKey: process.env.RESEND_API_KEY,
-        smtpFrom: process.env.SMTP_FROM,
-        baseUrl: process.env.BASE_URL,
+        rabbitmqUrl: process.env.RABBITMQ_URL,
         apiKey: process.env.API_KEY,
     };
 
@@ -61,9 +57,7 @@ export const loadConfig = (): AppConfig => {
         databaseUrl: required.databaseUrl!,
         githubBaseUrl: required.githubBaseUrl!,
         githubToken: process.env.GITHUB_TOKEN || undefined,
-        resendApiKey: required.resendApiKey!,
-        smtpFrom: required.smtpFrom!,
-        baseUrl: required.baseUrl!,
+        rabbitmqUrl: required.rabbitmqUrl!,
         apiKey: required.apiKey!,
         scannerIntervalMs,
         port: parseInt(process.env.PORT || '3000', 10),
