@@ -16,6 +16,7 @@ import authPlugin from './modules/shared/auth/auth.plugin.ts';
 import metricsPlugin from './modules/shared/metrics/metrics.plugin.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './modules/scanner/scanner.service.ts';
+import { notifyRelease } from './modules/subscriptions/subscription.notifications.ts';
 
 dotenv.config();
 
@@ -80,12 +81,14 @@ fastify.addHook('onReady', async () => {
     await runMigrations(fastify);
 
     const scannerLog = fastify.log.child({ component: 'scanner' });
+    const onRelease = (repoId: number, ownerRepo: string, tag: string) =>
+        notifyRelease(fastify.pg, fastify.mailer, scannerLog, repoId, ownerRepo, tag);
     const timer = startScanner(
         fastify.pg,
         fastify.github,
-        fastify.mailer,
         scannerLog,
         config.scannerIntervalMs,
+        onRelease,
     );
 
     fastify.addHook('onClose', async () => {

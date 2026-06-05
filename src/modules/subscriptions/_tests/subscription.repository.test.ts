@@ -7,6 +7,7 @@ import {
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
+    getConfirmedSubscribers,
 } from '../subscription.repository.ts';
 import { AlreadySubscribedError } from '../subscription.errors.ts';
 
@@ -123,6 +124,27 @@ describe('getSubscriptionsByEmail', () => {
     it('returns empty array when no subscriptions', async () => {
         const db = makeDb([], 0);
         const result = await getSubscriptionsByEmail(db, 'nobody@example.com');
+        expect(result).toEqual([]);
+    });
+});
+
+describe('getConfirmedSubscribers', () => {
+    it('returns rows for given repoId', async () => {
+        const rows = [{ email: 'a@b.com', unsubscribe_token: 'tok' }];
+        const db = makeDb(rows);
+        const result = await getConfirmedSubscribers(db, 5);
+        expect(result).toEqual(rows);
+    });
+
+    it('passes repoId as first parameter', async () => {
+        const db = makeDb([]);
+        await getConfirmedSubscribers(db, 99);
+        expect(vi.mocked(db.query).mock.calls[0][1]).toEqual([99]);
+    });
+
+    it('returns empty array when no subscribers', async () => {
+        const db = makeDb([]);
+        const result = await getConfirmedSubscribers(db, 1);
         expect(result).toEqual([]);
     });
 });

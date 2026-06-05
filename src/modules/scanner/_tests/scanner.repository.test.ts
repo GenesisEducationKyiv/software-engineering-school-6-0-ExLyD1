@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { QueryRunner } from '../../shared/db/db.types.ts';
-import {
-    getWatchedRepos,
-    getConfirmedSubscribers,
-    updateLastSeenTag,
-} from '../scanner.repository.ts';
+import { getWatchedRepos, updateLastSeenTag } from '../scanner.repository.ts';
 
 function makeDb(rows: unknown[] = [], rowCount: number | null = 1): QueryRunner {
     return { query: vi.fn().mockResolvedValue({ rows, rowCount }) };
@@ -32,27 +28,6 @@ describe('getWatchedRepos', () => {
     it('returns empty array when no repos', async () => {
         const db = makeDb([]);
         const result = await getWatchedRepos(db);
-        expect(result).toEqual([]);
-    });
-});
-
-describe('getConfirmedSubscribers', () => {
-    it('returns rows for given repoId', async () => {
-        const rows = [{ email: 'a@b.com', unsubscribe_token: 'tok' }];
-        const db = makeDb(rows);
-        const result = await getConfirmedSubscribers(db, 5);
-        expect(result).toEqual(rows);
-    });
-
-    it('passes repoId as first parameter', async () => {
-        const db = makeDb([]);
-        await getConfirmedSubscribers(db, 99);
-        expect(vi.mocked(db.query).mock.calls[0][1]).toEqual([99]);
-    });
-
-    it('returns empty array when no subscribers', async () => {
-        const db = makeDb([]);
-        const result = await getConfirmedSubscribers(db, 1);
         expect(result).toEqual([]);
     });
 });

@@ -1,13 +1,8 @@
 import type { DbPool } from '../shared/db/db.types.ts';
 import type { GitHubClient } from '../shared/github/github.types.ts';
-import type { NotificationMailer } from '../shared/mailer/mailer.types.ts';
 import type { WatchedRepo } from './scanner.types.ts';
 import { GitHubApiError } from '../shared/github/github.errors.ts';
-import {
-    getWatchedRepos,
-    getConfirmedSubscribers,
-    updateLastSeenTag,
-} from './scanner.repository.ts';
+import { getWatchedRepos, updateLastSeenTag } from './scanner.repository.ts';
 import type { FastifyBaseLogger } from 'fastify';
 import { SCAN_CHUNK_SIZE } from './scanner.constants.ts';
 
@@ -15,6 +10,18 @@ type RepoUpdate = {
     repo: WatchedRepo;
     latestTag: string;
 };
+
+/**
+ * Called when the scanner detects a new release. The scanner does not know — or
+ * care — what happens next (notify subscribers, publish to a queue, …). The
+ * handler is injected by the composition root (app.ts), keeping the scanner free
+ * of any dependency on the subscriptions module or the mailer.
+ */
+export type ReleaseHandler = (
+    repoId: number,
+    ownerRepo: string,
+    latestTag: string,
+) => Promise<void>;
 
 export const fetchRepoUpdates = async (
     repos: WatchedRepo[],
@@ -81,47 +88,25 @@ export const fetchRepoUpdates = async (
     return updates;
 };
 
-export const persistAndNotify = async (
+export const dispatchUpdates = async (
     updates: RepoUpdate[],
     db: DbPool,
-    mailer: NotificationMailer,
     log: FastifyBaseLogger,
+    onRelease: ReleaseHandler,
 ): Promise<void> => {
     for (const { repo, latestTag } of updates) {
         log.info({ repository: repo.owner_repo, tag: latestTag }, 'Scanner: new release detected');
 
-        const subscribers = await getConfirmedSubscribers(db, repo.id);
-
-        log.info(
-            { repository: repo.owner_repo, subscriberCount: subscribers.length },
-            'Scanner: notifying subscribers',
-        );
-
         await updateLastSeenTag(db, repo.id, latestTag);
-
-        for (const sub of subscribers) {
-            try {
-                await mailer.sendReleaseNotification(
-                    sub.email,
-                    repo.owner_repo,
-                    latestTag,
-                    sub.unsubscribe_token,
-                );
-            } catch (err) {
-                log.error(
-                    { err, repository: repo.owner_repo },
-                    'Scanner: failed to notify subscriber',
-                );
-            }
-        }
+        await onRelease(repo.id, repo.owner_repo, latestTag);
     }
 };
 
 export const runScanCycle = async (
     db: DbPool,
     github: GitHubClient,
-    mailer: NotificationMailer,
     log: FastifyBaseLogger,
+    onRelease: ReleaseHandler,
 ): Promise<void> => {
     log.info('Scanner: starting scan cycle');
 
@@ -132,7 +117,7 @@ export const runScanCycle = async (
         return;
     }
 
-    await persistAndNotify(updates, db, mailer, log);
+    await dispatchUpdates(updates, db, log, onRelease);
 
     log.info('Scanner: scan cycle complete');
 };
@@ -140,13 +125,13 @@ export const runScanCycle = async (
 export const startScanner = (
     db: DbPool,
     github: GitHubClient,
-    mailer: NotificationMailer,
     log: FastifyBaseLogger,
     intervalMs: number,
+    onRelease: ReleaseHandler,
 ): ReturnType<typeof setInterval> => {
     const run = async () => {
         try {
-            await runScanCycle(db, github, mailer, log);
+            await runScanCycle(db, github, log, onRelease);
         } catch (err) {
             log.error({ err }, 'Scanner: unhandled error in scan cycle');
         }

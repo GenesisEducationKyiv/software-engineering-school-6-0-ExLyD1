@@ -1,5 +1,5 @@
 import type { QueryRunner } from '../shared/db/db.types.ts';
-import type { WatchedRepo, ScannerSubscriberRow } from './scanner.types.ts';
+import type { WatchedRepo } from './scanner.types.ts';
 
 export const getWatchedRepos = async (db: QueryRunner): Promise<WatchedRepo[]> => {
     const { rows } = await db.query<WatchedRepo>(`
@@ -8,22 +8,6 @@ export const getWatchedRepos = async (db: QueryRunner): Promise<WatchedRepo[]> =
         JOIN subscriptions s ON s.repository_id = r.id
         WHERE s.confirmed = true
     `);
-    return rows;
-};
-
-export const getConfirmedSubscribers = async (
-    db: QueryRunner,
-    repoId: number,
-): Promise<ScannerSubscriberRow[]> => {
-    const { rows } = await db.query<ScannerSubscriberRow>(
-        `
-        SELECT u.email, s.unsubscribe_token
-        FROM subscriptions s
-        JOIN users u ON u.id = s.user_id
-        WHERE s.repository_id = $1 AND s.confirmed = true
-    `,
-        [repoId],
-    );
     return rows;
 };
 

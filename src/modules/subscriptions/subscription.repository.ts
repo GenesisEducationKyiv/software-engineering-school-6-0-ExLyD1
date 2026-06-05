@@ -1,5 +1,5 @@
 import type { QueryRunner, User, Repository, Subscription } from '../shared/db/db.types.ts';
-import type { SubscriptionRow } from './subscription.types.ts';
+import type { SubscriptionRow, ConfirmedSubscriber } from './subscription.types.ts';
 import { AlreadySubscribedError } from './subscription.errors.ts';
 
 export const upsertUser = async (db: QueryRunner, email: string): Promise<number> => {
@@ -80,4 +80,20 @@ export const getSubscriptionsByEmail = async (
         [email],
     );
     return result.rows;
+};
+
+export const getConfirmedSubscribers = async (
+    db: QueryRunner,
+    repoId: number,
+): Promise<ConfirmedSubscriber[]> => {
+    const { rows } = await db.query<ConfirmedSubscriber>(
+        `
+        SELECT u.email, s.unsubscribe_token
+        FROM subscriptions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.repository_id = $1 AND s.confirmed = true
+    `,
+        [repoId],
+    );
+    return rows;
 };
