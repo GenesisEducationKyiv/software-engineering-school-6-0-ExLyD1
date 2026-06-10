@@ -2,13 +2,13 @@
 
 Проєкт створений для юзерів хто хоче отримувати на пошту листи коли виходить новий release в певному repository.
 
-> **Оновлення (HW#7, 2026-06):** архітектуру відрефакторено на **модульний моноліт** (домени `subscriptions` / `scanner` / `shared`) з винесенням нотифікацій в окремий **мікросервіс** `notification-service`, що спілкується з API асинхронно через **RabbitMQ** (команди `SendEmail`). Діаграми нижче описують початковий in-process дизайн (`Notifier` був усередині процесу); актуальну архітектуру та обґрунтування рішень див. у [`ADR-002.md`](ADR-002.md).
+> **Архітектура (HW#7):** **модульний моноліт** (домени `subscriptions` / `scanner` / `shared`) + винесений **мікросервіс** `notification-service`, що отримує команди `SendEmail` через **RabbitMQ**. Обґрунтування рішень — у [`ADR-002.md`](ADR-002.md); деталі брокера — у [`message-broker.md`](message-broker.md).
 
 ---
 
 ## Огляд проєкту
 
-Users, які хочуть слідкувати за новими releases від компаній в проєктах не можут отримувати повідомлення відразу на пошту. Тож мій сервіс вирішує цю проблему. User повинен ввести свою електронну пошту та репозиторій у форматі onwer/repo, та потім підтвердити на пошті відслідковування releases і отримувати їх в подальшому. Також в кожному листі user має можливість відписатись від repositories releases. Окрім того, кожен може переглянути на які репозиторії підписаний певний user, використовуючи пошту.
+Users, які хочуть слідкувати за новими releases від компаній в проєктах не можуть отримувати повідомлення відразу на пошту. Тож мій сервіс вирішує цю проблему. User повинен ввести свою електронну пошту та репозиторій у форматі owner/repo, та потім підтвердити на пошті відслідковування releases і отримувати їх в подальшому. Також в кожному листі user має можливість відписатись від repositories releases. Окрім того, кожен може переглянути на які репозиторії підписаний певний user, використовуючи пошту.
 
 ---
 
@@ -30,7 +30,7 @@ Users, які хочуть слідкувати за новими releases ві�
 
 ### Нефункціональні вимоги
 
-- Доступність: ~99% (в межах можливостей Railway)
+- Доступність: ~99% (в межах можливостей хостингу)
 - Час відповіді API: < 500ms
 - Безпека: запобігання SQL Injections + Verification + Rate Limits
 - Надійність: Best-effort доставлення в межах GitHub rate limit
@@ -39,7 +39,7 @@ Users, які хочуть слідкувати за новими releases ві�
 
 - 1000 запитів на годину ( Github Rate Limits )
 - Не надсилаємо перший реліз відразу при підписці
-- Trade-off після ліміту повідомлення губляться, але не дублюються
+- Доставка листів асинхронна через чергу (at-least-once): можливі дублі, а невдалі повідомлення паркуються в DLQ (деталі — у [`message-broker.md`](message-broker.md))
 - GitHub та Resend тестуються через моки — реальна взаємодія з зовнішніми API не перевіряється
 
 ---
@@ -76,9 +76,10 @@ Users, які хочуть слідкувати за новими releases ві�
 | Фреймворк   | Fastify         |
 | База даних  | PostgreSQL      |
 | ORM / Query | Raw SQL (pg)    |
-| Email API   | Resend API      |
+| Брокер черг | RabbitMQ (amqplib) |
+| Email       | Resend (у notification-service) |
 | GitHub API  | GitHub REST API |
-| Деплой      | Railway         |
+| Деплой      | Docker Compose  |
 
 ---
 
@@ -86,19 +87,22 @@ Users, які хочуть слідкувати за новими releases ві�
 
 ```mermaid
 graph TD
-    GW[Backend API] --> APIService[API Routes]
-    GW --> ScannerService[Scanner Service]
+    Client[Браузер / API клієнт] -->|HTTP| API[API моноліт]
 
-    APIService --> SubscriptionService[Subscription Service]
-    APIService --> GitHubAPI[GitHub API]
-    APIService --> Notifier[Notifier]
+    subgraph Monolith[Модульний моноліт]
+        API --> Subs[subscriptions]
+        Scanner[scanner] -->|onRelease| Subs
+        API --> GH[GitHub API]
+        Scanner --> GH
+        Subs --> DB[(PostgreSQL)]
+        Scanner --> DB
+        Subs -->|publisher| Pub[mailer = publisher]
+    end
 
-    ScannerService --> GitHubAPI
-    ScannerService --> Notifier
-    ScannerService --> DB[(PostgreSQL)]
-
-    SubscriptionService --> DB
-    Notifier --> ResendAPI[Resend API]
+    Pub -->|SendEmail| MQ[[RabbitMQ: email_commands]]
+    MQ --> Notif[notification-service]
+    MQ -. невдалі .-> DLQ[[email_commands.dlq]]
+    Notif --> Resend[Resend API]
 ```
 
 ---
@@ -113,13 +117,12 @@ graph TD
 
 ### Backend
 
-Звʼязує між собою 3 сервіси логіки, поєднує два з них ( scanner and subscription ) до БД.
+**Модульний моноліт** (один процес) + один винесений сервіс.
 
-**Основні сервіси:**
-
-- `Scanner` — Пошук нових релізів відповідно до confirmed subscription та repositories
-- `Notifier` — Сервіс відправлення емейлів на пошту
-- `Subscription` — API для керування підписками
+- **`subscriptions`** (ядро) — CRUD підписок, володіє БД; на новий реліз дістає підписників і публікує команди розсилки
+- **`scanner`** — періодично шукає нові релізи в GitHub; знайшовши, віддає їх через колбек (не знає про підписників чи пошту)
+- **`shared`** — спільне: github-клієнт (ACL), db, config, auth, metrics, messaging (RabbitMQ)
+- **`notification-service`** (окремий деплой, без БД) — консьюмер черги `email_commands`: рендерить лист із шаблону й шле через Resend
 
 ---
 
@@ -187,37 +190,42 @@ erDiagram
 **Сценарій: Підписка та отримання сповіщення про реліз**
 
 1. Користувач вводить email та репозиторій у форматі `owner/repo`
-2. Сервер валідує дані, перевіряє існування репозиторію через GitHub API, зберігає підписку (`confirmed=false`) та відправляє confirmation email
-3. Користувач отримує email з посиланням підтвердження
-4. Користувач переходить по посиланню → сервер оновлює підписку (`confirmed=true`) в БД
-5. Сканнер кожні 5 хв запитує GitHub API на нові релізи для всіх підтверджених підписок
-6. При новому релізі Notifier відправляє email з деталями релізу та посиланням для відписки
+2. API валідує дані, перевіряє репозиторій у GitHub, зберігає підписку (`confirmed=false`) і **публікує команду** `SendEmail` (confirmation) у чергу
+3. `notification-service` забирає команду з черги й надсилає confirmation email
+4. Користувач переходить за посиланням → API оновлює підписку (`confirmed=true`)
+5. Сканер кожні 5 хв шукає нові релізи для підтверджених підписок
+6. На новий реліз `subscriptions` дістає підписників і публікує команду на кожного → `notification-service` надсилає лист із посиланням для відписки
 
 ```mermaid
 sequenceDiagram
     participant User as Користувач
-    participant API as Backend API
+    participant API as API моноліт
     participant DB as PostgreSQL
     participant GH as GitHub API
+    participant MQ as RabbitMQ
+    participant Notif as notification-service
     participant Resend as Resend API
 
     User->>API: POST /api/subscribe (email, owner/repo)
     API->>GH: GET /repos/:owner/:repo/releases/latest
-    GH-->>API: 200 OK (latest release tag)
+    GH-->>API: 200 OK (latest tag)
     API->>DB: INSERT user, repository, subscription (confirmed=false)
-    API->>Resend: sendConfirmationEmail(email, token)
+    API->>MQ: publish SendEmail (confirmation)
+    API-->>User: 200 (перевір пошту)
+    MQ->>Notif: deliver command
+    Notif->>Resend: send confirmation email
     Resend-->>User: Email з посиланням підтвердження
 
     User->>API: GET /api/confirm/:token
     API->>DB: UPDATE subscription SET confirmed=true
-    API-->>User: 200 Subscription confirmed
 
     loop Кожні 5 хвилин
-        API->>DB: SELECT confirmed subscriptions + repositories
-        API->>GH: GET /repos/:owner/:repo/releases/latest
-        GH-->>API: latest tag
-        API->>DB: UPDATE last_seen_tag (якщо новий реліз)
-        API->>Resend: sendReleaseEmail(email, release info, unsubscribe token)
+        API->>DB: SELECT confirmed subscriptions
+        API->>GH: GET .../releases/latest
+        API->>DB: UPDATE last_seen_tag (новий реліз)
+        API->>MQ: publish SendEmail (release) на кожного підписника
+        MQ->>Notif: deliver command
+        Notif->>Resend: send release email
         Resend-->>User: Email з новим релізом
     end
 ```
@@ -228,16 +236,16 @@ sequenceDiagram
 
 ### Як тестуємо зараз
 
-- [x] Unit тести: валідація email та repo форматів, логіка підписки (транзакція, rollback, дублікати), формування та відправка email листів, сканування нових релізів
-- [x] Integration тести: HTTP endpoints — коректні статус-коди та відповіді при різних сценаріях підписки
-- [x] Ручне тестування: підписка через UI форму, підтвердження email, отримання notification при новому релізі
+- [x] Unit тести (моноліт): валідація, логіка підписки (транзакція, rollback, дублікати), сканер, publisher команд
+- [x] Тести `notification-service`: логіка консьюмера (рендер шаблонів, dispatch команд)
+- [x] Integration тести: HTTP endpoints проти реальної PostgreSQL
+- [x] Наживо: підписка → черга → consumer → Resend; DLQ ловить невдалі повідомлення
 
 ### Як перевіряємо через 3 місяці
 
-- Моніторинг: відсутній — Railway надає базовий uptime статус
-- Логи: Fastify пише структуровані JSON логи в stdout, доступні через Railway dashboard
-- Алерти: відсутні
-- Метрики: відсутні
+- Логи: структуровані JSON (pino) → gelf → Logstash → Elasticsearch → Kibana (моноліт і `notification-service`)
+- Метрики: RED-метрики (prom-client) → Prometheus → Grafana
+- Алерти: відсутні (наступний крок)
 
 ---
 
@@ -250,11 +258,16 @@ sequenceDiagram
 
 ## Deployment
 
-| Компонент  | Де розгорнуто    |
-| ---------- | ---------------- |
-| Backend    | Railway (Docker) |
-| База даних | Railway (Docker) |
-| CI/CD      | GitHub Actions   |
+| Компонент            | Де розгорнуто            |
+| -------------------- | ------------------------ |
+| API моноліт          | Docker                   |
+| notification-service | Docker                   |
+| PostgreSQL           | Docker                   |
+| RabbitMQ             | Docker                   |
+| Observability        | ELK + Prometheus/Grafana |
+| CI/CD                | GitHub Actions           |
+
+> Усе піднімається однією командою `docker compose up --build`.
 
 ---
 
@@ -266,4 +279,4 @@ sequenceDiagram
 
 ## Deadline
 
-**Deadline:** 2026-05-08
+**Deadline:** 2026-06-07
