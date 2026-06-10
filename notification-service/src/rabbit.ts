@@ -1,5 +1,5 @@
 import { connect } from 'amqplib';
-import { EMAIL_QUEUE } from './contract.ts';
+import { EMAIL_QUEUE, EMAIL_DLX, EMAIL_DLQ } from './contract.ts';
 import { logger } from './logger.ts';
 
 export type RabbitConnection = Awaited<ReturnType<typeof connect>>;
@@ -19,7 +19,15 @@ export const connectRabbit = async (
         try {
             const connection = await connect(url);
             const channel = await connection.createChannel();
-            await channel.assertQueue(EMAIL_QUEUE, { durable: true });
+            // Dead-letter topology: a message the consumer rejects (nack) is parked
+            // in the DLQ instead of being lost or requeued into an infinite loop.
+            await channel.assertExchange(EMAIL_DLX, 'fanout', { durable: true });
+            await channel.assertQueue(EMAIL_DLQ, { durable: true });
+            await channel.bindQueue(EMAIL_DLQ, EMAIL_DLX, '');
+            await channel.assertQueue(EMAIL_QUEUE, {
+                durable: true,
+                arguments: { 'x-dead-letter-exchange': EMAIL_DLX },
+            });
             // Take one unacked message at a time so work is fairly spread if we
             // scale out to several consumer instances.
             await channel.prefetch(1);
@@ -28,7 +36,9 @@ export const connectRabbit = async (
             if (attempt === retries) {
                 throw err;
             }
-            logger.warn(`RabbitMQ not ready (attempt ${attempt}/${retries}), retrying in ${delayMs}ms`);
+            logger.warn(
+                `RabbitMQ not ready (attempt ${attempt}/${retries}), retrying in ${delayMs}ms`,
+            );
             await sleep(delayMs);
         }
     }

@@ -3,6 +3,10 @@
 // src/modules/shared/messaging/email-commands.ts.
 
 export const EMAIL_QUEUE = 'email_commands';
+// Dead-letter topology: messages the consumer rejects are parked in the DLQ
+// (via this exchange) instead of being lost.
+export const EMAIL_DLX = 'email_commands.dlx';
+export const EMAIL_DLQ = 'email_commands.dlq';
 
 export interface ConfirmationEmailCommand {
     type: 'confirmation';

@@ -1,5 +1,5 @@
 import { connect } from 'amqplib';
-import { EMAIL_QUEUE } from './email-commands.ts';
+import { EMAIL_QUEUE, EMAIL_DLX } from './email-commands.ts';
 
 // Derive the connection/channel types from the installed amqplib version so we
 // stay robust across its type changes (Connection vs ChannelModel etc.).
@@ -21,8 +21,12 @@ export const connectRabbit = async (
         try {
             const connection = await connect(url);
             const channel = await connection.createChannel();
-            // Durable queue so messages survive a broker restart.
-            await channel.assertQueue(EMAIL_QUEUE, { durable: true });
+            // Durable queue (survives broker restart) that dead-letters rejected
+            // messages to the DLX so they are parked, not lost.
+            await channel.assertQueue(EMAIL_QUEUE, {
+                durable: true,
+                arguments: { 'x-dead-letter-exchange': EMAIL_DLX },
+            });
             return { connection, channel };
         } catch (err) {
             if (attempt === retries) {

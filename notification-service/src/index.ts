@@ -45,7 +45,7 @@ const main = async () => {
                 );
             } catch (err) {
                 logger.error({ err }, 'Failed to process message');
-                // Drop the poison message instead of requeuing it forever.
+                // Reject without requeue → broker routes it to the DLQ (parked, not lost).
                 channel.nack(msg, false, false);
             }
         })();
