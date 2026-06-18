@@ -1,5 +1,6 @@
 export type ServiceConfig = {
     rabbitmqUrl: string;
+    databaseUrl: string;
     resendApiKey: string;
     smtpFrom: string;
     baseUrl: string;
@@ -8,6 +9,7 @@ export type ServiceConfig = {
 export const loadConfig = (): ServiceConfig => {
     const required = {
         rabbitmqUrl: process.env.RABBITMQ_URL,
+        databaseUrl: process.env.DATABASE_URL,
         resendApiKey: process.env.RESEND_API_KEY,
         smtpFrom: process.env.SMTP_FROM,
         baseUrl: process.env.BASE_URL,
@@ -23,6 +25,7 @@ export const loadConfig = (): ServiceConfig => {
 
     return {
         rabbitmqUrl: required.rabbitmqUrl!,
+        databaseUrl: required.databaseUrl!,
         resendApiKey: required.resendApiKey!,
         smtpFrom: required.smtpFrom!,
         baseUrl: required.baseUrl!,

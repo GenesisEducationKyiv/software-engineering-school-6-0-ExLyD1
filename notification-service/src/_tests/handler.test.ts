@@ -18,6 +18,7 @@ describe('handleCommand', () => {
 
         await handleCommand(mailer, BASE_URL, {
             type: 'confirmation',
+            sagaId: 'saga-x',
             email: 'user@example.com',
             token: 'tok-123',
         });

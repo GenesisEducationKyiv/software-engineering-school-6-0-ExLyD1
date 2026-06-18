@@ -7,9 +7,12 @@ export const EMAIL_QUEUE = 'email_commands';
 // (via this exchange) instead of being lost.
 export const EMAIL_DLX = 'email_commands.dlx';
 export const EMAIL_DLQ = 'email_commands.dlq';
+// Saga: the orchestrator (monolith) listens here for the result of a confirmation.
+export const SAGA_REPLIES_QUEUE = 'saga_replies';
 
 export interface ConfirmationEmailCommand {
     type: 'confirmation';
+    sagaId: string;
     email: string;
     token: string;
 }
@@ -23,3 +26,9 @@ export interface ReleaseEmailCommand {
 }
 
 export type EmailCommand = ConfirmationEmailCommand | ReleaseEmailCommand;
+
+// Reply the notification-service sends back to the saga orchestrator.
+export interface SagaReply {
+    sagaId: string;
+    status: 'sent' | 'failed';
+}

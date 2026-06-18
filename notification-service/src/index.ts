@@ -1,25 +1,33 @@
 import { Resend } from 'resend';
 import { loadConfig } from './config.ts';
-import { connectRabbit } from './rabbit.ts';
+import { connectRabbit, type RabbitChannel } from './rabbit.ts';
 import { createMailer } from './mailer.ts';
 import { handleCommand } from './handler.ts';
+import { processConfirmation } from './saga.ts';
+import { createDb, initDb } from './db.ts';
 import { logger } from './logger.ts';
-import { EMAIL_QUEUE, type EmailCommand } from './contract.ts';
+import { EMAIL_QUEUE, SAGA_REPLIES_QUEUE, type EmailCommand, type SagaReply } from './contract.ts';
+
+const publishReply = (channel: RabbitChannel, reply: SagaReply): void => {
+    channel.sendToQueue(SAGA_REPLIES_QUEUE, Buffer.from(JSON.stringify(reply)), {
+        persistent: true,
+    });
+};
 
 const main = async () => {
     const config = loadConfig();
+    const db = createDb(config.databaseUrl);
+    await initDb(db);
+
     const resend = new Resend(config.resendApiKey);
     const mailer = createMailer(resend, config.smtpFrom);
 
     const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
+    await channel.assertQueue(SAGA_REPLIES_QUEUE, { durable: true });
 
     logger.info(`Connected, consuming "${EMAIL_QUEUE}"`);
 
     let shuttingDown = false;
-
-    // If the broker connection drops while we are running, exit so the
-    // orchestrator (docker restart: on-failure) restarts us and we reconnect via
-    // the startup retry. Handling 'error' also prevents an unhandled-error crash.
     const onConnectionLost = (err?: unknown) => {
         if (shuttingDown) {
             return;
@@ -37,6 +45,20 @@ const main = async () => {
         void (async () => {
             try {
                 const command = JSON.parse(msg.content.toString()) as EmailCommand;
+
+                if (command.type === 'confirmation') {
+                    // Saga step: try once, report the outcome to the orchestrator.
+                    const status = await processConfirmation(
+                        { db, mailer, baseUrl: config.baseUrl, log: logger },
+                        command,
+                    );
+                    publishReply(channel, { sagaId: command.sagaId, status });
+                    channel.ack(msg);
+                    logger.info({ sagaId: command.sagaId, status }, 'Saga confirmation processed');
+                    return;
+                }
+
+                // Release notification: plain fire-and-forget, not part of a saga.
                 await handleCommand(mailer, config.baseUrl, command);
                 channel.ack(msg);
                 logger.info(
@@ -45,7 +67,7 @@ const main = async () => {
                 );
             } catch (err) {
                 logger.error({ err }, 'Failed to process message');
-                // Reject without requeue → broker routes it to the DLQ (parked, not lost).
+                // Malformed/unexpected → park in the DLQ.
                 channel.nack(msg, false, false);
             }
         })();
@@ -56,6 +78,7 @@ const main = async () => {
         try {
             await channel.close();
             await connection.close();
+            await db.end();
         } finally {
             process.exit(0);
         }
