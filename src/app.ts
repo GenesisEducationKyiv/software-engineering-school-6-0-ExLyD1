@@ -41,7 +41,9 @@ const fastify = Fastify({
             req(request: FastifyRequest) {
                 return {
                     method: request.method,
-                    url: request.url,
+                    // route template, not the raw URL — avoids leaking emails and
+                    // confirm/unsubscribe tokens into Elasticsearch.
+                    url: request.routeOptions?.url ?? 'unknown',
                     userAgent: request.headers['user-agent'],
                     remoteAddress: request.ip,
                 };
@@ -68,12 +70,13 @@ fastify.register(fastifyStatic, {
     wildcard: false,
 });
 
-fastify.setErrorHandler((error: FastifyError, _request, reply) => {
+fastify.setErrorHandler((error: FastifyError, request, reply) => {
     const statusCode = error.statusCode ?? 500;
     if (statusCode < 500) {
         return reply.status(statusCode).send({ error: error.message });
     }
-    fastify.log.error({ err: error }, 'Unhandled route error');
+    // request.log carries the requestId, so the error is traceable to its request.
+    request.log.error({ err: error }, 'Unhandled route error');
     reply.status(500).send({ error: 'Internal server error' });
 });
 
