@@ -71,6 +71,23 @@ describe('startRegisterSubscription', () => {
         expect(client.query).toHaveBeenCalledWith('BEGIN');
         expect(client.query).toHaveBeenCalledWith('COMMIT');
     });
+
+    it('rolls back and rethrows when a step fails (no dual-write)', async () => {
+        const { db, client } = buildDb();
+        const boom = new Error('duplicate subscription');
+        vi.mocked(insertSubscription).mockRejectedValueOnce(boom);
+
+        await expect(
+            startRegisterSubscription(db, 'user@example.com', 'org/repo', 'v1.0.0'),
+        ).rejects.toBe(boom);
+
+        expect(client.query).toHaveBeenCalledWith('BEGIN');
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+        expect(createSaga).not.toHaveBeenCalled();
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(client.release).toHaveBeenCalledOnce();
+    });
 });
 
 describe('handleReply', () => {
@@ -82,6 +99,16 @@ describe('handleReply', () => {
 
         expect(setStatus).toHaveBeenCalledWith(db, 's1', 'completed');
         expect(deleteByConfirmToken).not.toHaveBeenCalled();
+    });
+
+    it('ignores replies for unknown sagas (getSaga returns null)', async () => {
+        vi.mocked(getSaga).mockResolvedValue(null);
+        const { db } = buildDb();
+
+        await handleReply(db, { sagaId: 'ghost', status: 'sent' });
+
+        expect(setStatus).not.toHaveBeenCalled();
+        expect(db.connect).not.toHaveBeenCalled();
     });
 
     it('ignores replies for sagas not awaiting confirmation (idempotent)', async () => {

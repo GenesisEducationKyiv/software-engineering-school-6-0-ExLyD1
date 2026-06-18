@@ -6,6 +6,7 @@ import {
     insertSubscription,
     confirmSubscription,
     deleteSubscription,
+    deleteByConfirmToken,
     getSubscriptionsByEmail,
     getConfirmedSubscribers,
 } from '../subscription.repository.ts';
@@ -101,6 +102,24 @@ describe('deleteSubscription', () => {
     it('returns false when rowCount is 0', async () => {
         const db = makeDb([], 0);
         const result = await deleteSubscription(db, 'missing-token');
+        expect(result).toBe(false);
+    });
+});
+
+describe('deleteByConfirmToken', () => {
+    it('deletes by confirm_token and returns true when a row was removed', async () => {
+        const db = makeDb([], 1);
+        const result = await deleteByConfirmToken(db, 'tok-1');
+
+        expect(result).toBe(true);
+        const [sql, params] = vi.mocked(db.query).mock.calls[0];
+        expect(sql).toContain('DELETE FROM subscriptions WHERE confirm_token');
+        expect(params).toEqual(['tok-1']);
+    });
+
+    it('returns false when no row matched', async () => {
+        const db = makeDb([], 0);
+        const result = await deleteByConfirmToken(db, 'missing');
         expect(result).toBe(false);
     });
 });
