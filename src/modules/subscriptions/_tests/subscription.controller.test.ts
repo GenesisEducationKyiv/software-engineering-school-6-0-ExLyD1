@@ -4,24 +4,26 @@ import type {} from '../../shared/mailer/mailer.plugin.ts';
 import type {} from '../../shared/github/github.plugin.ts';
 
 vi.mock('../subscription.service.ts', () => ({
-    subscribe: vi.fn(),
     confirmSubscription: vi.fn(),
     deleteSubscription: vi.fn(),
     getSubscriptionsByEmail: vi.fn(),
 }));
+vi.mock('../../saga/saga.orchestrator.ts', () => ({
+    startRegisterSubscription: vi.fn(),
+}));
 
 import {
-    subscribe,
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
 } from '../subscription.service.ts';
+import { startRegisterSubscription } from '../../saga/saga.orchestrator.ts';
 import { AlreadySubscribedError } from '../subscription.errors.ts';
 import { GitHubApiError, InvalidRepoFormatError } from '../../shared/github/github.errors.ts';
 import routes from '../subscription.controller.ts';
 import type { GitHubRelease } from '../../shared/github/github.types.ts';
 
-const mockSubscribe = vi.mocked(subscribe);
+const mockStartSaga = vi.mocked(startRegisterSubscription);
 const mockConfirmSubscription = vi.mocked(confirmSubscription);
 const mockDeleteSubscription = vi.mocked(deleteSubscription);
 const mockGetSubscriptionsByEmail = vi.mocked(getSubscriptionsByEmail);
@@ -46,20 +48,11 @@ beforeEach(() => {
 });
 
 describe('POST /api/subscribe', () => {
-    it('responds 409 and does not send email when already subscribed', async () => {
-        const mockGetLatestRelease = vi
-            .fn()
-            .mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease);
-        mockSubscribe.mockRejectedValue(new AlreadySubscribedError());
-
-        const mockSendConfirmationEmail = vi.fn().mockResolvedValue(undefined);
-        const app = Fastify({ logger: false });
-        app.decorate('github', { getLatestRelease: mockGetLatestRelease });
-        app.decorate('mailer', {
-            sendConfirmationEmail: mockSendConfirmationEmail,
-            sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
+    it('responds 409 when already subscribed', async () => {
+        mockStartSaga.mockRejectedValue(new AlreadySubscribedError());
+        const app = buildApp({
+            getLatestRelease: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease),
         });
-        app.register(routes);
 
         const response = await app.inject({
             method: 'POST',
@@ -69,7 +62,6 @@ describe('POST /api/subscribe', () => {
 
         expect(response.statusCode).toBe(409);
         expect(response.json()).toMatchObject({ error: expect.stringContaining('already') });
-        expect(mockSendConfirmationEmail).not.toHaveBeenCalled();
     });
 
     it('responds 404 and does not touch the database when GitHub returns no releases', async () => {
@@ -83,23 +75,19 @@ describe('POST /api/subscribe', () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toMatchObject({ error: expect.stringContaining('not found') });
-        expect(mockSubscribe).not.toHaveBeenCalled();
+        expect(mockStartSaga).not.toHaveBeenCalled();
     });
 
-    it('responds 500 when email sending fails (subscribe rolls back and throws)', async () => {
-        const smtpError = new Error('SMTP connection refused');
-        mockSubscribe.mockRejectedValue(smtpError);
+    it('responds 500 when starting the saga fails', async () => {
+        const sagaError = new Error('db down');
+        mockStartSaga.mockRejectedValue(sagaError);
 
         const app = Fastify({ logger: { level: 'silent' } });
         const logErrorSpy = vi.spyOn(app.log, 'error');
-
         app.decorate('github', {
             getLatestRelease: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease),
         });
-        app.decorate('mailer', {
-            sendConfirmationEmail: vi.fn().mockResolvedValue(undefined),
-            sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
-        });
+        app.decorate('mailer', { sendReleaseNotification: vi.fn().mockResolvedValue(undefined) });
         app.register(routes);
 
         const response = await app.inject({
@@ -110,10 +98,10 @@ describe('POST /api/subscribe', () => {
 
         expect(response.statusCode).toBe(500);
         expect(response.json()).toMatchObject({ error: 'Internal server error' });
-        expect(mockSubscribe).toHaveBeenCalledOnce();
+        expect(mockStartSaga).toHaveBeenCalledOnce();
         expect(logErrorSpy).toHaveBeenCalledWith(
-            expect.objectContaining({ err: smtpError }),
-            expect.stringContaining('email'),
+            expect.objectContaining({ err: sagaError }),
+            expect.stringContaining('saga'),
         );
     });
 
@@ -162,18 +150,11 @@ describe('POST /api/subscribe', () => {
         });
     });
 
-    it('responds 200 on success and calls mailer', async () => {
-        mockSubscribe.mockResolvedValue('confirm-token-123');
-        const mockSendConfirmationEmail = vi.fn().mockResolvedValue(undefined);
-        const app = Fastify({ logger: false });
-        app.decorate('github', {
+    it('responds 202 and starts the saga on success', async () => {
+        mockStartSaga.mockResolvedValue('saga-123');
+        const app = buildApp({
             getLatestRelease: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0' } as GitHubRelease),
         });
-        app.decorate('mailer', {
-            sendConfirmationEmail: mockSendConfirmationEmail,
-            sendReleaseNotification: vi.fn().mockResolvedValue(undefined),
-        });
-        app.register(routes);
 
         const response = await app.inject({
             method: 'POST',
@@ -181,8 +162,9 @@ describe('POST /api/subscribe', () => {
             payload: { email: 'user@example.com', repo: 'org/repo' },
         });
 
-        expect(response.statusCode).toBe(200);
-        expect(mockSendConfirmationEmail).toHaveBeenCalledOnce();
+        expect(response.statusCode).toBe(202);
+        expect(mockStartSaga).toHaveBeenCalledOnce();
+        expect(response.json()).toMatchObject({ sagaId: 'saga-123' });
     });
 
     it('responds 429 when GitHub API returns rate limit error', async () => {

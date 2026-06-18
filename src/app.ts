@@ -17,6 +17,8 @@ import metricsPlugin from './modules/shared/metrics/metrics.plugin.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './modules/scanner/scanner.service.ts';
 import { notifyRelease } from './modules/subscriptions/subscription.notifications.ts';
+import { startRelay } from './modules/saga/outbox.relay.ts';
+import { startReplyConsumer } from './modules/saga/saga.replies.ts';
 
 dotenv.config();
 
@@ -79,6 +81,17 @@ fastify.setErrorHandler((error: FastifyError, _request, reply) => {
 
 fastify.addHook('onReady', async () => {
     await runMigrations(fastify);
+
+    // Saga: outbox relay + reply consumer (skipped in stub mode — no broker).
+    if (process.env.MAILER_MODE !== 'stub') {
+        const sagaLog = fastify.log.child({ component: 'saga' });
+        const relayTimer = startRelay(fastify.pg, fastify.rabbitChannel, sagaLog, 1000);
+        await startReplyConsumer(fastify.pg, fastify.rabbitChannel, sagaLog);
+        fastify.addHook('onClose', async () => {
+            clearInterval(relayTimer);
+        });
+        sagaLog.info('Saga: outbox relay + reply consumer started');
+    }
 
     const scannerLog = fastify.log.child({ component: 'scanner' });
     const onRelease = (repoId: number, ownerRepo: string, tag: string) =>

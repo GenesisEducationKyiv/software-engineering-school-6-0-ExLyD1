@@ -82,6 +82,16 @@ export const getSubscriptionsByEmail = async (
     return result.rows;
 };
 
+export const deleteByConfirmToken = async (
+    db: QueryRunner,
+    confirmToken: string,
+): Promise<boolean> => {
+    const result = await db.query(`DELETE FROM subscriptions WHERE confirm_token = $1`, [
+        confirmToken,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+};
+
 export const getConfirmedSubscribers = async (
     db: QueryRunner,
     repoId: number,

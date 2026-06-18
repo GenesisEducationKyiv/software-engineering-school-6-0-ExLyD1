@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { EMAIL_REGEX, UUID_REGEX } from '../shared/constants/regex.ts';
 import {
-    subscribe,
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
 } from './subscription.service.ts';
+import { startRegisterSubscription } from '../saga/saga.orchestrator.ts';
 import { AlreadySubscribedError } from './subscription.errors.ts';
 import { GitHubApiError, InvalidRepoFormatError } from '../shared/github/github.errors.ts';
 
@@ -46,21 +46,27 @@ async function routes(fastify: FastifyInstance) {
             }
 
             try {
-                const token = await subscribe(fastify.pg, email, repo, latestRelease.tag_name);
-                await fastify.mailer.sendConfirmationEmail(email, token);
+                const sagaId = await startRegisterSubscription(
+                    fastify.pg,
+                    email,
+                    repo,
+                    latestRelease.tag_name,
+                );
+                // Saga runs asynchronously (confirmation email via the notification
+                // service). We accept the request now; the result arrives by email.
+                return reply.status(202).send({
+                    message: 'Registration in progress. Check your email to confirm.',
+                    sagaId,
+                });
             } catch (err) {
                 if (err instanceof AlreadySubscribedError) {
                     return reply
                         .status(409)
                         .send({ error: 'Email already subscribed to this repository' });
                 }
-                fastify.log.error({ err }, 'POST /api/subscribe: subscription or email error');
+                fastify.log.error({ err }, 'POST /api/subscribe: failed to start saga');
                 return reply.status(500).send({ error: 'Internal server error' });
             }
-
-            return reply
-                .status(200)
-                .send({ message: 'Subscription successful. Confirmation email sent.' });
         },
     );
 

@@ -1,18 +1,19 @@
 import fastifyPlugin from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
-import type { ConfirmationMailer, NotificationMailer } from './mailer.types.ts';
+import type { NotificationMailer } from './mailer.types.ts';
 import type { AppConfig } from '../config/config.ts';
-import { connectRabbit } from '../messaging/rabbit.ts';
+import { connectRabbit, type RabbitChannel } from '../messaging/rabbit.ts';
 import { createPublishingMailer } from './mailer.publisher.ts';
 
 declare module 'fastify' {
     interface FastifyInstance {
-        mailer: ConfirmationMailer & NotificationMailer;
+        mailer: NotificationMailer;
+        // Shared channel so the saga relay + reply consumer reuse one connection.
+        rabbitChannel: RabbitChannel;
     }
 }
 
-const createStubMailer = (): ConfirmationMailer & NotificationMailer => ({
-    sendConfirmationEmail: async () => {},
+const createStubMailer = (): NotificationMailer => ({
     sendReleaseNotification: async () => {},
 });
 
@@ -25,6 +26,7 @@ const mailerConnector = async (fastify: FastifyInstance, config: AppConfig) => {
 
     const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
     fastify.decorate('mailer', createPublishingMailer(channel));
+    fastify.decorate('rabbitChannel', channel);
 
     let intentionalClose = false;
 

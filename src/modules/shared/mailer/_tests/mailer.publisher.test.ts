@@ -12,29 +12,13 @@ beforeEach(() => {
 });
 
 describe('createPublishingMailer', () => {
-    it('publishes a confirmation command to the email queue', async () => {
-        const channel = buildChannel();
-        const mailer = createPublishingMailer(channel);
-
-        await mailer.sendConfirmationEmail('user@example.com', 'tok-123');
-
-        expect(channel.sendToQueue).toHaveBeenCalledOnce();
-        const [queue, content] = vi.mocked(channel.sendToQueue).mock.calls[0];
-        expect(queue).toBe(EMAIL_QUEUE);
-        const command = JSON.parse(content.toString()) as EmailCommand;
-        expect(command).toEqual({
-            type: 'confirmation',
-            email: 'user@example.com',
-            token: 'tok-123',
-        });
-    });
-
     it('publishes a release command to the email queue', async () => {
         const channel = buildChannel();
         const mailer = createPublishingMailer(channel);
 
         await mailer.sendReleaseNotification('user@example.com', 'org/repo', 'v2.0.0', 'unsub-1');
 
+        expect(channel.sendToQueue).toHaveBeenCalledOnce();
         const [queue, content] = vi.mocked(channel.sendToQueue).mock.calls[0];
         expect(queue).toBe(EMAIL_QUEUE);
         const command = JSON.parse(content.toString()) as EmailCommand;
@@ -51,7 +35,7 @@ describe('createPublishingMailer', () => {
         const channel = buildChannel();
         const mailer = createPublishingMailer(channel);
 
-        await mailer.sendConfirmationEmail('user@example.com', 'tok');
+        await mailer.sendReleaseNotification('user@example.com', 'org/repo', 'v2.0.0', 'unsub-1');
 
         const options = vi.mocked(channel.sendToQueue).mock.calls[0][2];
         expect(options).toMatchObject({ persistent: true });
