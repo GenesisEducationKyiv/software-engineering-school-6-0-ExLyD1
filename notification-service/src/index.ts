@@ -2,9 +2,9 @@ import { Resend } from 'resend';
 import { loadConfig } from './config.ts';
 import { connectRabbit } from './rabbit.ts';
 import { createMailer } from './mailer.ts';
-import { handleCommand } from './handler.ts';
 import { logger } from './logger.ts';
-import { EMAIL_QUEUE, type EmailCommand } from './contract.ts';
+import { EMAIL_QUEUE } from './contract.ts';
+import { processMessage } from './consumer.ts';
 
 const main = async () => {
     const config = loadConfig();
@@ -34,21 +34,7 @@ const main = async () => {
         if (!msg) {
             return;
         }
-        void (async () => {
-            try {
-                const command = JSON.parse(msg.content.toString()) as EmailCommand;
-                await handleCommand(mailer, config.baseUrl, command);
-                channel.ack(msg);
-                logger.info(
-                    { emailType: command.type, recipient: command.email },
-                    'Email delivered',
-                );
-            } catch (err) {
-                logger.error({ err }, 'Failed to process message');
-                // Drop the poison message instead of requeuing it forever.
-                channel.nack(msg, false, false);
-            }
-        })();
+        void processMessage({ channel, mailer, baseUrl: config.baseUrl, log: logger }, msg);
     });
 
     const shutdown = async () => {

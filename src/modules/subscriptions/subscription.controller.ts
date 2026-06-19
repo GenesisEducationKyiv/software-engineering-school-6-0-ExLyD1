@@ -58,9 +58,9 @@ async function routes(fastify: FastifyInstance) {
                 return reply.status(500).send({ error: 'Internal server error' });
             }
 
-            return reply
-                .status(200)
-                .send({ message: 'Subscription successful. Confirmation email sent.' });
+            return reply.status(202).send({
+                message: 'Subscription received. A confirmation email is on its way.',
+            });
         },
     );
 

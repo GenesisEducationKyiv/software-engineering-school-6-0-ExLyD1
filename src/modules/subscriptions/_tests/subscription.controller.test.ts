@@ -162,7 +162,7 @@ describe('POST /api/subscribe', () => {
         });
     });
 
-    it('responds 200 on success and calls mailer', async () => {
+    it('responds 202 on success and calls mailer', async () => {
         mockSubscribe.mockResolvedValue('confirm-token-123');
         const mockSendConfirmationEmail = vi.fn().mockResolvedValue(undefined);
         const app = Fastify({ logger: false });
@@ -181,7 +181,7 @@ describe('POST /api/subscribe', () => {
             payload: { email: 'user@example.com', repo: 'org/repo' },
         });
 
-        expect(response.statusCode).toBe(200);
+        expect(response.statusCode).toBe(202);
         expect(mockSendConfirmationEmail).toHaveBeenCalledOnce();
     });
 

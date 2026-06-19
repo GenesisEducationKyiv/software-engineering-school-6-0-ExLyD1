@@ -30,14 +30,14 @@ beforeEach(async () => {
 });
 
 describe('POST /api/subscribe', () => {
-    it('200: creates subscription in DB and calls sendConfirmationEmail', async () => {
+    it('202: creates subscription in DB and calls sendConfirmationEmail', async () => {
         const res = await app.inject({
             method: 'POST',
             url: '/api/subscribe',
             headers: { 'x-api-key': API_KEY },
             payload: { email: 'user@example.com', repo: 'org/repo' },
         });
-        expect(res.statusCode).toBe(200);
+        expect(res.statusCode).toBe(202);
         expect(mailer.sendConfirmationEmail).toHaveBeenCalledOnce();
 
         const row = await getSubscriptionRow(app.pg, 'user@example.com', 'org/repo');
