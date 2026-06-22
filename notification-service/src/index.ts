@@ -6,6 +6,8 @@ import { handleCommand } from './handler.ts';
 import { processConfirmation } from './saga.ts';
 import { createDb, initDb } from './db.ts';
 import { logger } from './logger.ts';
+import { buildGrpcServer, startGrpcServer } from './grpc.server.ts';
+import { buildRestServer } from './rest.server.ts';
 import { EMAIL_QUEUE, SAGA_REPLIES_QUEUE, type EmailCommand, type SagaReply } from './contract.ts';
 
 const publishReply = (channel: RabbitChannel, reply: SagaReply): void => {
@@ -21,6 +23,14 @@ const main = async () => {
 
     const resend = new Resend(config.resendApiKey);
     const mailer = createMailer(resend, config.smtpFrom);
+
+    // Sync read API for the monolith — exposed over BOTH gRPC and REST so the two
+    // transports can be benchmarked against the same domain logic.
+    const grpcServer = buildGrpcServer(db, logger);
+    await startGrpcServer(grpcServer, config.grpcPort, logger);
+
+    const restServer = buildRestServer(db, logger);
+    await restServer.listen({ host: '0.0.0.0', port: config.httpPort });
 
     const { connection, channel } = await connectRabbit(config.rabbitmqUrl);
     await channel.assertQueue(SAGA_REPLIES_QUEUE, { durable: true });
@@ -78,6 +88,8 @@ const main = async () => {
         try {
             await channel.close();
             await connection.close();
+            grpcServer.forceShutdown();
+            await restServer.close();
             await db.end();
         } finally {
             process.exit(0);
