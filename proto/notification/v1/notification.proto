@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package notification.v1;
+
+// Read-only query: the monolith asks the notification-service for the delivery
+// status of a saga's confirmation email. notification-service owns this data
+// (the `notifications` table), so this is a genuine cross-service sync read.
+service NotificationQueryService {
+  rpc GetNotificationStatus(GetNotificationStatusRequest)
+      returns (GetNotificationStatusResponse);
+}
+
+message GetNotificationStatusRequest {
+  string saga_id = 1;
+}
+
+message GetNotificationStatusResponse {
+  NotificationStatus status = 1;
+  string recipient = 2;
+}
+
+enum NotificationStatus {
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  NOTIFICATION_STATUS_PENDING = 1;
+  NOTIFICATION_STATUS_SENT = 2;
+  NOTIFICATION_STATUS_FAILED = 3;
+}
