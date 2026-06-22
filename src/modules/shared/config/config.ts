@@ -9,6 +9,7 @@ export type AppConfig = {
     scannerIntervalMs: number;
     port: number;
     logLevel: LogLevel;
+    notificationGrpcAddr: string;
 };
 
 const VALID_LOG_LEVELS = new Set<LogLevel>([
@@ -62,5 +63,6 @@ export const loadConfig = (): AppConfig => {
         scannerIntervalMs,
         port: parseInt(process.env.PORT || '3000', 10),
         logLevel,
+        notificationGrpcAddr: process.env.NOTIFICATION_GRPC_ADDR || '127.0.0.1:50051',
     };
 };

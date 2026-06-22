@@ -14,6 +14,8 @@ import mailerConnector from './modules/shared/mailer/mailer.plugin.ts';
 import githubConnector from './modules/shared/github/github.plugin.ts';
 import authPlugin from './modules/shared/auth/auth.plugin.ts';
 import metricsPlugin from './modules/shared/metrics/metrics.plugin.ts';
+import notificationGrpcPlugin from './modules/shared/grpc/notification.plugin.ts';
+import notificationStatusRoutes from './modules/shared/grpc/notification-status.controller.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './modules/scanner/scanner.service.ts';
 import { notifyRelease } from './modules/subscriptions/subscription.notifications.ts';
@@ -60,7 +62,9 @@ fastify.register(dbConnector, config);
 fastify.register(mailerConnector, config);
 fastify.register(githubConnector, config);
 fastify.register(authPlugin, config);
+fastify.register(notificationGrpcPlugin, config);
 fastify.register(subscriptionRoutes);
+fastify.register(notificationStatusRoutes);
 fastify.register(healthRoutes);
 
 fastify.register(fastifyStatic, {

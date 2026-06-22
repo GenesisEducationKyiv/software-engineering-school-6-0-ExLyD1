@@ -14,6 +14,7 @@ function buildApp() {
         scannerIntervalMs: 0,
         port: 3000,
         logLevel: 'info',
+        notificationGrpcAddr: '127.0.0.1:50051',
     });
 
     app.get('/api/protected', async (_req, reply) => reply.send({ ok: true }));
