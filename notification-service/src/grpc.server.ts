@@ -27,7 +27,7 @@ const toProtoStatus = (status: NotificationStatusValue): NotificationStatus => {
     }
 };
 
-const buildImpl = (db: Db, log: Logger): NotificationQueryServiceServer => ({
+export const buildNotificationQueryImpl = (db: Db, log: Logger): NotificationQueryServiceServer => ({
     getNotificationStatus: (call, callback) => {
         void (async () => {
             try {
@@ -56,7 +56,7 @@ const buildImpl = (db: Db, log: Logger): NotificationQueryServiceServer => ({
 
 export const buildGrpcServer = (db: Db, log: Logger): grpc.Server => {
     const server = new grpc.Server();
-    server.addService(NotificationQueryServiceService, buildImpl(db, log));
+    server.addService(NotificationQueryServiceService, buildNotificationQueryImpl(db, log));
     return server;
 };
 
