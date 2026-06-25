@@ -30,6 +30,7 @@ export default defineConfig({
             SMTP_FROM: process.env.SMTP_FROM ?? 'test@example.com',
             MAILER_MODE: process.env.MAILER_MODE ?? 'stub',
             GITHUB_MODE: process.env.GITHUB_MODE ?? 'stub',
+            RABBITMQ_URL: process.env.RABBITMQ_URL ?? 'amqp://localhost:5672',
             SCANNER_INTERVAL_MS: process.env.SCANNER_INTERVAL_MS ?? '9999999',
         },
     },

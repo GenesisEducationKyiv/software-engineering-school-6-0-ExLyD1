@@ -52,6 +52,11 @@ Services (use `127.0.0.1`, not `localhost` — see note):
 - **component** = `api` (HTTP) or `scanner` (background) via a pino child logger,
   so logs can be filtered per component while keeping one shared `service.name`.
 
+The **notification-service** follows the same convention — it logs structured pino
+JSON (`service.name: notification-service`, `component: notification`) and is wired to
+the same `gelf` driver, so its logs land in the same Elasticsearch index. The Logstash
+config also maps its `emailType` and `recipient` fields.
+
 ### How logs are shipped (the pipeline)
 
 `config/logstash/logstash.conf`:
