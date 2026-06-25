@@ -83,6 +83,25 @@ npm run build   # compiles TypeScript → dist/
 npm start       # runs dist/app.js
 ```
 
+## Observability
+
+Structured JSON logs are shipped to Elasticsearch via the Docker `gelf` driver and
+Logstash, and explored in Kibana. `docker compose up` also starts Elasticsearch
+(`:9200`), Kibana (`:5601`), and Logstash (gelf `udp:12201`).
+
+- Logs are written by pino, correlated per request via `requestId`, and tagged
+  `component: api | scanner`. Verbosity is controlled by `LOG_LEVEL`.
+- The Kibana data view and dashboard are reproducible from
+  [`config/kibana/dashboard.ndjson`](config/kibana/dashboard.ndjson).
+- RED metrics (`prom-client`) are exposed at `/metrics`, scraped by Prometheus
+  (`:9090`), and visualized in an auto-provisioned Grafana dashboard
+  (`:3001`, admin/admin).
+
+See [`docs/observability.md`](docs/observability.md) for the full pipeline, field
+reference, and the dashboard import command.
+
+> On macOS, use `127.0.0.1` (not `localhost`) for Docker-published ports.
+
 ## Tests
 
 ```bash

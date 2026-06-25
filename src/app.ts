@@ -1,9 +1,10 @@
 // ESM
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
 import { loadConfig } from './config.ts';
 import subscriptionRoutes from './controllers/subscription.ts';
@@ -12,6 +13,7 @@ import dbConnector from './plugins/db.ts';
 import mailerConnector from './plugins/mailer.ts';
 import githubConnector from './plugins/github.ts';
 import authPlugin from './plugins/auth.ts';
+import metricsPlugin from './plugins/metrics.ts';
 import { runMigrations } from './database/migrate.ts';
 import { startScanner } from './services/scanner.ts';
 
@@ -28,7 +30,28 @@ try {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({
+    genReqId: () => randomUUID(),
+    requestIdLogLabel: 'requestId',
+    logger: {
+        level: config.logLevel,
+        base: { service: { name: 'github-release-notifier' }, component: 'api' },
+        serializers: {
+            req(request: FastifyRequest) {
+                return {
+                    method: request.method,
+                    // route template, not the raw URL — avoids leaking emails and
+                    // confirm/unsubscribe tokens into Elasticsearch.
+                    url: request.routeOptions?.url ?? 'unknown',
+                    userAgent: request.headers['user-agent'],
+                    remoteAddress: request.ip,
+                };
+            },
+        },
+    },
+});
+
+fastify.register(metricsPlugin);
 
 fastify.register(fastifyRateLimit, { global: false });
 
@@ -46,32 +69,34 @@ fastify.register(fastifyStatic, {
     wildcard: false,
 });
 
-fastify.setErrorHandler((error: FastifyError, _request, reply) => {
+fastify.setErrorHandler((error: FastifyError, request, reply) => {
     const statusCode = error.statusCode ?? 500;
     if (statusCode < 500) {
         return reply.status(statusCode).send({ error: error.message });
     }
-    fastify.log.error({ err: error }, 'Unhandled route error');
+    // request.log carries the requestId, so the error is traceable to its request.
+    request.log.error({ err: error }, 'Unhandled route error');
     reply.status(500).send({ error: 'Internal server error' });
 });
 
 fastify.addHook('onReady', async () => {
     await runMigrations(fastify);
 
+    const scannerLog = fastify.log.child({ component: 'scanner' });
     const timer = startScanner(
         fastify.pg,
         fastify.github,
         fastify.mailer,
-        fastify.log,
+        scannerLog,
         config.scannerIntervalMs,
     );
 
     fastify.addHook('onClose', async () => {
         clearInterval(timer);
-        fastify.log.info('Scanner: stopped');
+        scannerLog.info('Scanner: stopped');
     });
 
-    fastify.log.info(`Scanner: started, interval ${config.scannerIntervalMs / 1000}s`);
+    scannerLog.info(`Scanner: started, interval ${config.scannerIntervalMs / 1000}s`);
 });
 
 fastify.listen({ port: config.port, host: '0.0.0.0' }, function (err) {

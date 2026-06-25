@@ -43,6 +43,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<F
         baseUrl: 'http://localhost:3000',
         scannerIntervalMs: 9_999_999,
         port: 3000,
+        logLevel: 'silent' as const,
     };
 
     const fastify = Fastify({ logger: false });

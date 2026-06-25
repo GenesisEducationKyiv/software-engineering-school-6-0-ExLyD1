@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { FastifyBaseLogger } from 'fastify';
 import { fetchRepoUpdates } from '../scanner.ts';
 import type { WatchedRepo, GitHubClient } from '../../types/index.ts';
 import { GitHubApiError } from '../../errors/index.ts';
@@ -14,7 +15,7 @@ function makeGithub(tag = 'v2.0.0'): GitHubClient {
     };
 }
 
-const silentLog = { info: vi.fn(), error: vi.fn() };
+const silentLog = { info: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger;
 
 beforeEach(() => {
     vi.clearAllMocks();
