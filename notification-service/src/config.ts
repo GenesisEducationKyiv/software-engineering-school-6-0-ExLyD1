@@ -1,0 +1,30 @@
+export type ServiceConfig = {
+    rabbitmqUrl: string;
+    resendApiKey: string;
+    smtpFrom: string;
+    baseUrl: string;
+};
+
+export const loadConfig = (): ServiceConfig => {
+    const required = {
+        rabbitmqUrl: process.env.RABBITMQ_URL,
+        resendApiKey: process.env.RESEND_API_KEY,
+        smtpFrom: process.env.SMTP_FROM,
+        baseUrl: process.env.BASE_URL,
+    };
+
+    for (const [key, value] of Object.entries(required)) {
+        if (!value) {
+            throw new Error(
+                `Missing required env var: ${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`,
+            );
+        }
+    }
+
+    return {
+        rabbitmqUrl: required.rabbitmqUrl!,
+        resendApiKey: required.resendApiKey!,
+        smtpFrom: required.smtpFrom!,
+        baseUrl: required.baseUrl!,
+    };
+};

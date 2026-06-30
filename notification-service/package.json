@@ -1,0 +1,23 @@
+{
+    "name": "notification-service",
+    "version": "1.0.0",
+    "description": "Consumes email commands from RabbitMQ and delivers them via Resend",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "amqplib": "^0.10.5",
+        "pino": "^9.5.0",
+        "resend": "^6.10.0"
+    },
+    "devDependencies": {
+        "@types/amqplib": "^0.10.7",
+        "@types/node": "^25.9.1",
+        "typescript": "^6.0.2",
+        "vitest": "^4.1.4"
+    }
+}

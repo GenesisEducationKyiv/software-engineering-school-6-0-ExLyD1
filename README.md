@@ -6,15 +6,20 @@ Subscribe to GitHub repositories and receive an email whenever a new release is 
 
 1. A user submits their email and a GitHub repository (`owner/repo`) via the web UI or `POST /api/subscribe`
 2. The app validates the repository against the GitHub API and stores the subscription
-3. A confirmation email is sent — the subscription is only active after the user clicks the link
-4. A background scanner polls GitHub on a configurable interval; when a new release tag is detected, all confirmed subscribers receive a notification email with an unsubscribe link
+3. The API publishes an email command to RabbitMQ; the standalone **notification-service** consumes it and sends a confirmation email — the subscription is only active after the user clicks the link
+4. A background scanner polls GitHub on a configurable interval; when a new release tag is detected, the `subscriptions` module looks up confirmed subscribers and publishes one notification command per subscriber, which the notification-service delivers (with an unsubscribe link)
+
+### Architecture
+
+This is a **modular monolith** (domains: `subscriptions`, `scanner`, `shared`) plus one extracted **microservice** (`notification-service`). The monolith never sends email itself — it publishes `SendEmail` commands to **RabbitMQ**, and the notification-service consumes them and calls Resend. See [`docs/ADR-002.md`](docs/ADR-002.md) for the full rationale.
 
 ## Tech Stack
 
 - **Runtime:** Node.js 22, TypeScript (ESM)
 - **Framework:** Fastify 5
 - **Database:** PostgreSQL (via `@fastify/postgres`)
-- **Email:** Resend API
+- **Email:** Resend API (sent by the `notification-service`, not the monolith)
+- **Message broker:** RabbitMQ (`amqplib`) — carries `SendEmail` commands from the API to the notification-service
 - **Rate limiting:** `@fastify/rate-limit` (5 requests per 15 minutes on `/api/subscribe`)
 - **Tests:** Vitest
 - **Containerisation:** Docker + Docker Compose
@@ -43,9 +48,10 @@ cp .env.example .env
 | `POSTGRES_DB`         | Docker only | PostgreSQL database name for the bundled container                   |
 | `GITHUB_TOKEN`        | No          | GitHub personal access token — raises rate limit from 60 to 5 000 req/h |
 | `GITHUB_BASE_URL`     | Yes         | GitHub REST API base URL (`https://api.github.com`)                  |
-| `RESEND_API_KEY`      | Yes         | Resend API key (starts with `re_…`)                                  |
-| `SMTP_FROM`           | Yes         | From address shown in outgoing emails                                |
-| `BASE_URL`            | Yes         | Public URL of the app used in email links (no trailing slash)        |
+| `RABBITMQ_URL`        | Yes         | RabbitMQ connection URL (e.g. `amqp://localhost:5672`). The API publishes commands here; the notification-service consumes them |
+| `RESEND_API_KEY`      | Yes         | Resend API key (starts with `re_…`) — used by the **notification-service**          |
+| `SMTP_FROM`           | Yes         | From address shown in outgoing emails — used by the **notification-service**        |
+| `BASE_URL`            | Yes         | Public URL used in email links (no trailing slash) — used by the **notification-service** |
 | `PORT`                | No          | HTTP port the server listens on (default: `3000`)                    |
 | `SCANNER_INTERVAL_MS` | Yes         | Release scan interval in milliseconds (e.g. `300000` for 5 minutes)  |
 | `API_KEY`             | Yes         | Secret key required in the `x-api-key` header for protected routes  |
@@ -60,9 +66,11 @@ docker compose up --build
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
 
+One command also starts **RabbitMQ** (management UI at [http://localhost:15672](http://localhost:15672)) and the **notification-service**.
+
 - Migrations run automatically on startup
 - To stop: `docker compose down`
-- To also wipe the database volume: `docker compose down -v`
+- To also wipe the database/broker volumes: `docker compose down -v`
 
 ## Running Locally (without Docker)
 
@@ -70,7 +78,8 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 # 1. Install dependencies
 npm install
 
-# 2. Ensure a local PostgreSQL instance is running and DATABASE_URL in .env is correct
+# 2. Ensure local PostgreSQL and RabbitMQ are running, and DATABASE_URL / RABBITMQ_URL in .env are correct
+#    (or set MAILER_MODE=stub to run the API without RabbitMQ — no email commands are published)
 
 # 3. Start the dev server (ts-node + nodemon, auto-restarts on file changes)
 npm run dev
@@ -89,8 +98,9 @@ Structured JSON logs are shipped to Elasticsearch via the Docker `gelf` driver a
 Logstash, and explored in Kibana. `docker compose up` also starts Elasticsearch
 (`:9200`), Kibana (`:5601`), and Logstash (gelf `udp:12201`).
 
-- Logs are written by pino, correlated per request via `requestId`, and tagged
-  `component: api | scanner`. Verbosity is controlled by `LOG_LEVEL`.
+- Logs are written by pino as structured JSON, correlated per request via `requestId`,
+  and tagged `component: api | scanner | notification`. The notification-service ships
+  the same structured logs to the same pipeline. Verbosity is controlled by `LOG_LEVEL`.
 - The Kibana data view and dashboard are reproducible from
   [`config/kibana/dashboard.ndjson`](config/kibana/dashboard.ndjson).
 - RED metrics (`prom-client`) are exposed at `/metrics`, scraped by Prometheus
@@ -131,35 +141,37 @@ See [`swagger.yaml`](swagger.yaml) for the full OpenAPI spec.
 
 ```
 src/
-  app.ts                          — entry point: plugin registration and startup
-  clients/
-    github.ts                     — GitHub REST API HTTP client
-    mailer.ts                     — Resend email client
-  controllers/
-    subscription.ts               — route handlers (subscribe, confirm, unsubscribe, list)
-    health.ts                     — GET /health route handler
-  services/
-    scanner.ts                    — background release scanner
-    subscription.ts               — subscription business logic (transaction, callbacks)
-  repositories/
-    subscription.repository.ts    — subscription DB queries
-    scanner.repository.ts         — scanner DB queries
-  errors/
-    github.ts                     — GitHubApiError, InvalidRepoFormatError
-    subscription.ts               — AlreadySubscribedError
-  plugins/
-    auth.ts                       — API key auth middleware (preHandler hook)
-    db.ts                         — @fastify/postgres registration
-    github.ts                     — GitHub client plugin (fastify.github)
-    mailer.ts                     — Resend mailer plugin (fastify.mailer)
-  constants/
-    regex.ts                      — shared validation regexes (email, repo, UUID)
-  types/                          — shared TypeScript interfaces
+  app.ts                                — composition root: wires plugins, scanner, and the onRelease handler
+  modules/
+    subscriptions/                      — core domain (owns users/repositories/subscriptions)
+      subscription.controller.ts        — routes: subscribe, confirm, unsubscribe, list
+      subscription.service.ts           — subscription lifecycle (transaction)
+      subscription.repository.ts        — subscription DB queries
+      subscription.notifications.ts     — on a release: look up subscribers → publish email commands
+      subscription.errors.ts            — AlreadySubscribedError
+      subscription.types.ts
+    scanner/                            — release-watching (detect new tags)
+      scanner.service.ts                — scan cycle; emits releases via an injected handler
+      scanner.repository.ts             — watched repos + last_seen_tag
+      scanner.constants.ts · scanner.types.ts
+    shared/                             — cross-cutting / infrastructure
+      github/    — GitHub REST client (ACL), plugin, errors, types
+      mailer/    — mailer interface + RabbitMQ publisher (fastify.mailer)
+      messaging/ — RabbitMQ connection + email-command contract
+      db/ · config/ · auth/ · metrics/ · health/ · constants/
   database/
-    migrate.ts                    — migration runner (runs automatically on startup)
-    migrations/                   — ordered SQL migration files
-public/
-  index.html                      — minimal web UI
-swagger.yaml                      — OpenAPI spec
-docker-compose.yml                — app + PostgreSQL container setup
+    migrate.ts                          — migration runner (runs automatically on startup)
+    migrations/                         — ordered SQL migration files
+
+notification-service/                   — extracted microservice (separate deploy, no DB)
+  src/
+    index.ts                            — RabbitMQ consumer → render template → send via Resend
+    handler.ts · mailer.ts · rabbit.ts · contract.ts · config.ts · logger.ts
+    templates/                          — confirmation + release email templates
+  Dockerfile · package.json
+
+public/index.html                       — minimal web UI
+swagger.yaml                            — OpenAPI spec
+docs/ADR-002.md                         — architecture decision (modular monolith + microservice)
+docker-compose.yml                      — app + notification + postgres + rabbitmq + ELK + Prometheus/Grafana
 ```

@@ -16,16 +16,49 @@ services:
 
     app:
         build: .
+        restart: on-failure
         env_file: .env
         environment:
             DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
             PORT: 3000
-            BASE_URL: ${BASE_URL}
             API_KEY: ${API_KEY}
+            RABBITMQ_URL: amqp://rabbitmq:5672
         ports:
             - '3000:3000'
         depends_on:
             postgres:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+            logstash:
+                condition: service_started
+        logging:
+            driver: gelf
+            options:
+                gelf-address: 'udp://127.0.0.1:12201'
+
+    rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        ports:
+            - '5672:5672'
+            - '15672:15672'
+        volumes:
+            - rabbitmq_data:/var/lib/rabbitmq
+        healthcheck:
+            test: ['CMD', 'rabbitmq-diagnostics', 'check_port_connectivity']
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s
+
+    notification:
+        build: ./notification-service
+        restart: on-failure
+        env_file: .env
+        environment:
+            RABBITMQ_URL: amqp://rabbitmq:5672
+        depends_on:
+            rabbitmq:
                 condition: service_healthy
             logstash:
                 condition: service_healthy
@@ -106,3 +139,4 @@ services:
 volumes:
     postgres_data:
     es_data:
+    rabbitmq_data:
