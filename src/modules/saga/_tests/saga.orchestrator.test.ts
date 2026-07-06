@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DbPool } from '../../shared/db/db.types.ts';
 import { startRegisterSubscription, handleReply } from '../saga.orchestrator.ts';
 
-vi.mock('../../subscriptions/subscription.repository.ts', () => ({
-    upsertUser: vi.fn().mockResolvedValue(1),
-    upsertRepository: vi.fn().mockResolvedValue(2),
-    insertSubscription: vi.fn().mockResolvedValue(undefined),
-    deleteByConfirmToken: vi.fn().mockResolvedValue(true),
-}));
 vi.mock('../saga.repository.ts', () => ({
     createSaga: vi.fn(),
     getSaga: vi.fn(),
@@ -18,10 +12,6 @@ vi.mock('../outbox.repository.ts', () => ({
     enqueue: vi.fn(),
 }));
 
-import {
-    insertSubscription,
-    deleteByConfirmToken,
-} from '../../subscriptions/subscription.repository.ts';
 import {
     type SagaRow,
     createSaga,
@@ -54,18 +44,25 @@ beforeEach(() => {
 });
 
 describe('startRegisterSubscription', () => {
-    it('writes subscription + saga + outbox command in one transaction', async () => {
+    it('creates the pending subscription (port) + saga + outbox command in one transaction', async () => {
         const { db, client } = buildDb();
+        const createPending = vi.fn().mockResolvedValue('tok-1');
 
         const sagaId = await startRegisterSubscription(
             db,
             'user@example.com',
             'org/repo',
             'v1.0.0',
+            createPending,
         );
 
         expect(typeof sagaId).toBe('string');
-        expect(insertSubscription).toHaveBeenCalledOnce();
+        expect(createPending).toHaveBeenCalledWith(
+            client,
+            'user@example.com',
+            'org/repo',
+            'v1.0.0',
+        );
         expect(createSaga).toHaveBeenCalledOnce();
         expect(enqueue).toHaveBeenCalledOnce();
         expect(client.query).toHaveBeenCalledWith('BEGIN');
@@ -75,10 +72,10 @@ describe('startRegisterSubscription', () => {
     it('rolls back and rethrows when a step fails (no dual-write)', async () => {
         const { db, client } = buildDb();
         const boom = new Error('duplicate subscription');
-        vi.mocked(insertSubscription).mockRejectedValueOnce(boom);
+        const createPending = vi.fn().mockRejectedValue(boom);
 
         await expect(
-            startRegisterSubscription(db, 'user@example.com', 'org/repo', 'v1.0.0'),
+            startRegisterSubscription(db, 'user@example.com', 'org/repo', 'v1.0.0', createPending),
         ).rejects.toBe(boom);
 
         expect(client.query).toHaveBeenCalledWith('BEGIN');
@@ -91,21 +88,23 @@ describe('startRegisterSubscription', () => {
 });
 
 describe('handleReply', () => {
+    const compensate = vi.fn().mockResolvedValue(true);
+
     it('marks the saga completed when notification reports sent', async () => {
         vi.mocked(getSaga).mockResolvedValue(makeSaga());
         const { db } = buildDb();
 
-        await handleReply(db, { sagaId: 's1', status: 'sent' });
+        await handleReply(db, { sagaId: 's1', status: 'sent' }, compensate);
 
         expect(setStatus).toHaveBeenCalledWith(db, 's1', 'completed');
-        expect(deleteByConfirmToken).not.toHaveBeenCalled();
+        expect(compensate).not.toHaveBeenCalled();
     });
 
     it('ignores replies for unknown sagas (getSaga returns null)', async () => {
         vi.mocked(getSaga).mockResolvedValue(null);
         const { db } = buildDb();
 
-        await handleReply(db, { sagaId: 'ghost', status: 'sent' });
+        await handleReply(db, { sagaId: 'ghost', status: 'sent' }, compensate);
 
         expect(setStatus).not.toHaveBeenCalled();
         expect(db.connect).not.toHaveBeenCalled();
@@ -115,7 +114,7 @@ describe('handleReply', () => {
         vi.mocked(getSaga).mockResolvedValue(makeSaga({ status: 'completed' }));
         const { db } = buildDb();
 
-        await handleReply(db, { sagaId: 's1', status: 'sent' });
+        await handleReply(db, { sagaId: 's1', status: 'sent' }, compensate);
 
         expect(setStatus).not.toHaveBeenCalled();
     });
@@ -124,20 +123,20 @@ describe('handleReply', () => {
         vi.mocked(getSaga).mockResolvedValue(makeSaga({ attempts: 0 }));
         const { db } = buildDb();
 
-        await handleReply(db, { sagaId: 's1', status: 'failed' });
+        await handleReply(db, { sagaId: 's1', status: 'failed' }, compensate);
 
         expect(incrementAttempts).toHaveBeenCalledOnce();
         expect(enqueue).toHaveBeenCalledOnce();
-        expect(deleteByConfirmToken).not.toHaveBeenCalled();
+        expect(compensate).not.toHaveBeenCalled();
     });
 
-    it('compensates (deletes the subscription) when attempts are exhausted', async () => {
+    it('compensates (via the injected port) when attempts are exhausted', async () => {
         vi.mocked(getSaga).mockResolvedValue(makeSaga({ attempts: 2 }));
-        const { db } = buildDb();
+        const { db, client } = buildDb();
 
-        await handleReply(db, { sagaId: 's1', status: 'failed' });
+        await handleReply(db, { sagaId: 's1', status: 'failed' }, compensate);
 
-        expect(deleteByConfirmToken).toHaveBeenCalledOnce();
+        expect(compensate).toHaveBeenCalledWith(client, 'tok-1');
         expect(setStatus).toHaveBeenCalledWith(expect.anything(), 's1', 'failed');
         expect(enqueue).not.toHaveBeenCalled();
     });

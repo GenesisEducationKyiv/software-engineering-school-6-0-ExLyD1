@@ -7,6 +7,7 @@ vi.mock('../subscription.service.ts', () => ({
     confirmSubscription: vi.fn(),
     deleteSubscription: vi.fn(),
     getSubscriptionsByEmail: vi.fn(),
+    createPendingSubscription: vi.fn(),
 }));
 vi.mock('../../saga/saga.orchestrator.ts', () => ({
     startRegisterSubscription: vi.fn(),

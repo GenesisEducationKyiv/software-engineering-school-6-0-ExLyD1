@@ -11,7 +11,7 @@ Subscribe to GitHub repositories and receive an email whenever a new release is 
 
 ### Architecture
 
-This is a **modular monolith** (domains: `subscriptions`, `scanner`, `shared`) plus one extracted **microservice** (`notification-service`). The monolith never sends email itself — it publishes `SendEmail` commands to **RabbitMQ**, and the notification-service consumes them and calls Resend. See [`docs/ADR-002.md`](docs/ADR-002.md) for the full rationale.
+This is a **modular monolith** (domains: `subscriptions`, `scanner`, `shared`) plus one extracted **microservice** (`notification-service`). The monolith never sends email itself — it publishes `SendEmail` commands to **RabbitMQ**, and the notification-service consumes them and calls Resend. See [`docs/ADR/ADR-002.md`](docs/ADR/ADR-002.md) for the full rationale.
 
 ## Tech Stack
 

@@ -2,7 +2,7 @@
 
 Проєкт створений для юзерів хто хоче отримувати на пошту листи коли виходить новий release в певному repository.
 
-> **Архітектура (HW#7):** **модульний моноліт** (домени `subscriptions` / `scanner` / `shared`) + винесений **мікросервіс** `notification-service`, що отримує команди `SendEmail` через **RabbitMQ**. Обґрунтування рішень — у [`ADR-002.md`](ADR-002.md); деталі брокера — у [`message-broker.md`](message-broker.md).
+> **Архітектура (HW#7):** **модульний моноліт** (домени `subscriptions` / `scanner` / `shared`) + винесений **мікросервіс** `notification-service`, що отримує команди `SendEmail` через **RabbitMQ**. Обґрунтування рішень — у [`ADR-002.md`](ADR/ADR-002.md); деталі брокера — у [`message-broker.md`](message-broker.md).
 
 ---
 

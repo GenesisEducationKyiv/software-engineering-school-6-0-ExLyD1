@@ -45,4 +45,4 @@ Consumer робить `nack(requeue=false)` → завдяки `x-dead-letter-ex
 - **Dual-write.** Підписка робить `COMMIT` у БД, потім публікує. Якщо публікація впаде
   між цими кроками — підписка є, листа нема. Правильно — transactional outbox.
 
-> Чому саме command (а не event), чому async і який домен виносили — у [ADR-002](ADR-002.md).
+> Чому саме command (а не event), чому async і який домен виносили — у [ADR-002](ADR/ADR-002.md).

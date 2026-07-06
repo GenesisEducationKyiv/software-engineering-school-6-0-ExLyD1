@@ -4,8 +4,9 @@ import {
     confirmSubscription,
     deleteSubscription,
     getSubscriptionsByEmail,
+    createPendingSubscription,
 } from './subscription.service.ts';
-import { startRegisterSubscription } from '../saga/saga.orchestrator.ts';
+import { startRegisterSubscription } from '../saga/index.ts';
 import { AlreadySubscribedError } from './subscription.errors.ts';
 import { GitHubApiError, InvalidRepoFormatError } from '../shared/github/github.errors.ts';
 
@@ -51,6 +52,7 @@ async function routes(fastify: FastifyInstance) {
                     email,
                     repo,
                     latestRelease.tag_name,
+                    createPendingSubscription,
                 );
                 // Saga runs asynchronously (confirmation email via the notification
                 // service). We accept the request now; the result arrives by email.
