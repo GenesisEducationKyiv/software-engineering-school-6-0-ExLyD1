@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
 import { loadConfig } from './modules/shared/config/config.ts';
-import subscriptionRoutes from './modules/subscriptions/subscription.controller.ts';
+import {
+    subscriptionRoutes,
+    notifyRelease,
+    deleteByConfirmToken,
+} from './modules/subscriptions/index.ts';
 import healthRoutes from './modules/shared/health/health.controller.ts';
 import dbConnector from './modules/shared/db/db.plugin.ts';
 import mailerConnector from './modules/shared/mailer/mailer.plugin.ts';
@@ -17,10 +21,8 @@ import metricsPlugin from './modules/shared/metrics/metrics.plugin.ts';
 import notificationGrpcPlugin from './modules/shared/grpc/notification.plugin.ts';
 import notificationStatusRoutes from './modules/shared/grpc/notification-status.controller.ts';
 import { runMigrations } from './database/migrate.ts';
-import { startScanner } from './modules/scanner/scanner.service.ts';
-import { notifyRelease } from './modules/subscriptions/subscription.notifications.ts';
-import { startRelay } from './modules/saga/outbox.relay.ts';
-import { startReplyConsumer } from './modules/saga/saga.replies.ts';
+import { startScanner } from './modules/scanner/index.ts';
+import { startRelay, startReplyConsumer } from './modules/saga/index.ts';
 
 dotenv.config();
 
@@ -90,7 +92,7 @@ fastify.addHook('onReady', async () => {
     if (process.env.MAILER_MODE !== 'stub') {
         const sagaLog = fastify.log.child({ component: 'saga' });
         const relayTimer = startRelay(fastify.pg, fastify.rabbitChannel, sagaLog, 1000);
-        await startReplyConsumer(fastify.pg, fastify.rabbitChannel, sagaLog);
+        await startReplyConsumer(fastify.pg, fastify.rabbitChannel, sagaLog, deleteByConfirmToken);
         fastify.addHook('onClose', async () => {
             clearInterval(relayTimer);
         });

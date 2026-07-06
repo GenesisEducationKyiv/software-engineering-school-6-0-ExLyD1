@@ -1,4 +1,4 @@
-import type { DbPool } from '../shared/db/db.types.ts';
+import type { DbPool, QueryRunner } from '../shared/db/db.types.ts';
 import type { SubscriptionRow } from './subscription.types.ts';
 import {
     upsertUser,
@@ -8,6 +8,26 @@ import {
     deleteSubscription as repoDeleteSubscription,
     getSubscriptionsByEmail as repoGetByEmail,
 } from './subscription.repository.ts';
+
+/**
+ * Creates a pending (unconfirmed) subscription on the given transaction client
+ * and returns its confirm token. Exposed as a port so the saga orchestrator can
+ * run it inside its transaction WITHOUT importing the subscriptions module
+ * (keeps the dependency graph acyclic: subscriptions -> saga, never back).
+ */
+export const createPendingSubscription = async (
+    client: QueryRunner,
+    email: string,
+    repo: string,
+    lastSeenTag: string,
+): Promise<string> => {
+    const userId = await upsertUser(client, email);
+    const repoId = await upsertRepository(client, repo, lastSeenTag);
+    const confirmToken = crypto.randomUUID();
+    const unsubscribeToken = crypto.randomUUID();
+    await insertSubscription(client, userId, repoId, confirmToken, unsubscribeToken);
+    return confirmToken;
+};
 
 export const subscribe = async (
     db: DbPool,

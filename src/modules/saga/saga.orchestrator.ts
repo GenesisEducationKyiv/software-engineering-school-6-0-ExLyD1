@@ -1,10 +1,4 @@
-import type { DbPool } from '../shared/db/db.types.ts';
-import {
-    upsertUser,
-    upsertRepository,
-    insertSubscription,
-    deleteByConfirmToken,
-} from '../subscriptions/subscription.repository.ts';
+import type { DbPool, QueryRunner } from '../shared/db/db.types.ts';
 import { createSaga, getSaga, setStatus, incrementAttempts } from './saga.repository.ts';
 import { enqueue } from './outbox.repository.ts';
 import {
@@ -16,26 +10,34 @@ import {
 // Total confirmation attempts before the saga gives up and compensates.
 const MAX_ATTEMPTS = 3;
 
+// Ports injected by the caller (composition root / subscriptions controller), so
+// the saga never imports the subscriptions module — the dependency graph stays
+// acyclic: subscriptions -> saga, never back.
+export type CreatePendingSubscriptionFn = (
+    client: QueryRunner,
+    email: string,
+    repo: string,
+    lastSeenTag: string,
+) => Promise<string>; // returns the confirm token
+export type CompensateFn = (client: QueryRunner, confirmToken: string) => Promise<unknown>;
+
 /**
- * Saga step T1 + start. Creates the subscription, the saga record, and the
- * outgoing confirmation command in ONE local transaction (transactional outbox)
- * — so there is no dual-write: either all three commit, or none.
+ * Saga step T1 + start. Creates the subscription (via the injected port), the
+ * saga record, and the outgoing confirmation command in ONE local transaction
+ * (transactional outbox) — so there is no dual-write: either all commit, or none.
  */
 export const startRegisterSubscription = async (
     db: DbPool,
     email: string,
     repo: string,
     lastSeenTag: string,
+    createPendingSubscription: CreatePendingSubscriptionFn,
 ): Promise<string> => {
     const client = await db.connect();
     try {
         await client.query('BEGIN');
 
-        const userId = await upsertUser(client, email);
-        const repoId = await upsertRepository(client, repo, lastSeenTag);
-        const confirmToken = crypto.randomUUID();
-        const unsubscribeToken = crypto.randomUUID();
-        await insertSubscription(client, userId, repoId, confirmToken, unsubscribeToken);
+        const confirmToken = await createPendingSubscription(client, email, repo, lastSeenTag);
 
         const sagaId = crypto.randomUUID();
         await createSaga(client, sagaId, email, confirmToken);
@@ -64,7 +66,11 @@ export const startRegisterSubscription = async (
  * - failed → retry (re-enqueue the command) up to MAX_ATTEMPTS, then compensate
  *            by deleting the subscription (C1) and marking the saga failed.
  */
-export const handleReply = async (db: DbPool, reply: SagaReply): Promise<void> => {
+export const handleReply = async (
+    db: DbPool,
+    reply: SagaReply,
+    compensate: CompensateFn,
+): Promise<void> => {
     const saga = await getSaga(db, reply.sagaId);
     if (!saga || saga.status !== 'awaiting_confirmation') {
         return; // unknown saga or already in a terminal state — ignore (idempotent)
@@ -89,7 +95,7 @@ export const handleReply = async (db: DbPool, reply: SagaReply): Promise<void> =
             };
             await enqueue(client, EMAIL_QUEUE, retry);
         } else {
-            await deleteByConfirmToken(client, saga.confirm_token); // C1: compensate
+            await compensate(client, saga.confirm_token); // C1: compensate
             await setStatus(client, reply.sagaId, 'failed');
         }
 
