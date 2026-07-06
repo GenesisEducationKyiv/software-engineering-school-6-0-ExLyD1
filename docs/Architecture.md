@@ -3,7 +3,27 @@
 Опис архітектури `github-release-notifier` за моделлю **C4** (Context → Container →
 Component → Code/Runtime). Стиль застосунку — **шаруватий модульний моноліт** із
 винесеним окремо `notification-service`. Правила залежностей і їх автоматична
-перевірка описані в [ADR-005](./ADR-005-layered-architecture.md).
+перевірка описані в [ADR-005](./ADR/ADR-005-layered-architecture.md).
+
+---
+
+## High-level огляд
+
+Ручна схема застосунку (container-рівень): моноліт як єдиний деплой (HTTP-шар +
+модулі `Subscriptions`/`Scanner`/`Saga`), окремий `notification-service`, дві бази
+(database-per-service) і дві черги RabbitMQ — `email_commands` (команди) і
+`saga_replies` (відповіді саги).
+
+![High-level architecture](./High-level-architecture.jpg)
+
+**Легенда:**
+- суцільна стрілка всередині `Monolith` — прямий виклик функції (той самий процес);
+- підписана стрілка через `RabbitMQ` — асинхронне повідомлення (окрема черга);
+- `gRPC` — єдиний синхронний виклик між сервісами (read-статус нотифікації, [ADR-004](./ADR/ADR-004-grpc.md));
+- пунктирні блоки — зовнішні системи / інший деплой.
+
+Деталізація нижче (Context → Container → Component → Runtime) — той самий застосунок
+через призму C4, з акцентом на межі модулів і правила залежностей.
 
 ---
 
@@ -31,7 +51,7 @@ flowchart TB
 ```
 
 **Ключове:** уся міжсервісна комунікація — асинхронна через RabbitMQ, крім одного
-синхронного read-статусу `GetNotificationStatus` (gRPC, див. [ADR-004](./ADR-004-grpc.md)).
+синхронного read-статусу `GetNotificationStatus` (gRPC, див. [ADR-004](./ADR/ADR-004-grpc.md)).
 
 ---
 
@@ -158,26 +178,35 @@ flowchart TB
 
 Усе це — не домовленість на словах, а **fitness-функції**: `npm run arch`
 (dependency-cruiser) валить збірку на порушенні. Деталі й межі інструмента — в
-[ADR-005](./ADR-005-layered-architecture.md).
+[ADR-005](./ADR/ADR-005-layered-architecture.md).
 
 ---
 
-## Рівень 4 — Runtime (реєстрація підписки, Saga)
+## Рівень 4 — Runtime (sequence diagrams)
 
-Динаміка головного сценарію — оркестрована сага з transactional outbox.
-Повна послідовність і рішення — в [ADR-003](./ADR-003.md):
+Динаміка ключових сценаріїв. Кожна діаграма — окремий шлях крізь шари.
+
+### 4.1 Реєстрація підписки (Saga + transactional outbox)
+
+Головний сценарій — оркестрована сага. Повна послідовність і рішення — в
+[ADR-003](./ADR/ADR-003.md).
 
 ```mermaid
 sequenceDiagram
+    actor U as Користувач
     participant C as Controller
+    participant GH as GitHub API
     participant O as Saga orchestrator
     participant DB as Monolith DB
     participant MQ as RabbitMQ
     participant N as notification-service
 
+    U->>C: POST /api/subscribe {email, repo}
+    C->>GH: getLatestRelease(repo)
+    GH-->>C: latest tag
     C->>O: startRegisterSubscription(port createPending)
     O->>DB: BEGIN — subscription(pending) + saga + outbox — COMMIT
-    Note over C: 202 Accepted
+    C-->>U: 202 Accepted (sagaId)
     O-->>MQ: relay публікує outbox → email_commands
     MQ->>N: SendConfirmation(sagaId)
     N-->>MQ: reply sent/failed → saga_replies
@@ -189,4 +218,104 @@ sequenceDiagram
     else failed (=3)
         O->>DB: compensate (port) + saga = failed
     end
+```
+
+### 4.2 Підтвердження підписки
+
+Синхронний шлях без саги — юзер клікає лист.
+
+```mermaid
+sequenceDiagram
+    actor U as Користувач
+    participant C as Controller
+    participant S as Service
+    participant R as Repository
+    participant DB as Monolith DB
+
+    U->>C: GET /api/confirm/:token
+    C->>S: confirmSubscription(token)
+    S->>R: mark confirmed by token
+    R->>DB: UPDATE subscription SET confirmed=true
+    DB-->>R: rowCount
+    R-->>S: found?
+    alt знайдено
+        C-->>U: 200 Confirmed
+    else токен невідомий
+        C-->>U: 404 Not found
+    end
+```
+
+### 4.3 Відписка
+
+```mermaid
+sequenceDiagram
+    actor U as Користувач
+    participant C as Controller
+    participant S as Service
+    participant R as Repository
+    participant DB as Monolith DB
+
+    U->>C: GET /api/unsubscribe/:token
+    C->>S: deleteSubscription(token)
+    S->>R: delete by unsubscribe_token
+    R->>DB: DELETE subscription
+    DB-->>R: rowCount
+    alt видалено
+        C-->>U: 200 Unsubscribed
+    else токен невідомий
+        C-->>U: 404 Not found
+    end
+```
+
+### 4.4 Сповіщення про новий реліз (scanner → fan-out)
+
+Фоновий поллер. Scanner не знає ні про підписників, ні про пошту — він лише
+сигналить, а `subscriptions` вирішує кому і як (інверсія через callback `onRelease`).
+
+```mermaid
+sequenceDiagram
+    participant SC as Scanner (поллер)
+    participant GH as GitHub API
+    participant NF as notifyRelease (subscriptions)
+    participant DB as Monolith DB
+    participant MQ as RabbitMQ
+    participant N as notification-service
+
+    loop кожні N секунд
+        SC->>GH: getLatestRelease(repo)
+        GH-->>SC: tag
+        alt новий tag
+            SC->>DB: оновити last_seen_tag
+            SC->>NF: onRelease(repoId, repo, tag)
+            NF->>DB: getConfirmedSubscribers(repoId)
+            DB-->>NF: список підписників
+            loop кожен підписник
+                NF-->>MQ: publish release → email_commands
+            end
+            MQ->>N: SendRelease → лист
+        end
+    end
+```
+
+### 4.5 Синхронний статус нотифікації (gRPC edge)
+
+Єдиний внутрішній sync-виклик — read-статус. Деталі й бенчмарк — в
+[ADR-004](./ADR/ADR-004-grpc.md).
+
+```mermaid
+sequenceDiagram
+    actor U as Клієнт
+    participant C as Edge controller (monolith)
+    participant GC as gRPC client
+    participant N as notification-service :50051
+    participant NDB as Notif DB
+
+    U->>C: GET /api/notifications/:sagaId
+    C->>GC: getNotificationStatus(sagaId)
+    GC->>N: GetNotificationStatus (protobuf/HTTP2)
+    N->>NDB: SELECT status by sagaId
+    NDB-->>N: row
+    N-->>GC: status
+    GC-->>C: status
+    C-->>U: 200 {status} / 404 / 502
 ```

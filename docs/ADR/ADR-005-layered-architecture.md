@@ -111,7 +111,7 @@
 - depcruise бачить **граф імпортів між модулями**, а не виклики методів усередині файлу;
 - runtime-хендл БД приходить не через `import`, а через Fastify-декоратор `fastify.pg`;
 - отже `fastify.pg.query('SELECT 1')` — це call-expression, **невидимий** для графа
-  залежностей (приклад: [health.controller.ts](../src/modules/shared/health/health.controller.ts) робить `SELECT 1` напряму).
+  залежностей (приклад: [health.controller.ts](../../src/modules/shared/health/health.controller.ts) робить `SELECT 1` напряму).
 
 Це урок про **роздільну здатність fitness-функцій**: межі модулів — рівень
 dependency-cruiser; «хто виконує SQL» — рівень виразів, тобто зона eslint
