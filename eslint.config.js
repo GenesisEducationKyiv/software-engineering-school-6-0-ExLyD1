@@ -8,7 +8,7 @@ export default [
     // ── 1. Global ignores
     // ────────────────────────────────────────────────────
     {
-        ignores: ['dist/**', 'node_modules/**', 'eslint.config.js'],
+        ignores: ['dist/**', 'node_modules/**', 'eslint.config.js', '**/generated/**'],
     },
 
     // ── 2. TypeScript — recommended rules for .ts files

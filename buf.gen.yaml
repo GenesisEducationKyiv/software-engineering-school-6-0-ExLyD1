@@ -1,0 +1,18 @@
+version: v2
+plugins:
+  # Server stubs (+ message codecs) for the notification-service.
+  - local: ./node_modules/.bin/protoc-gen-ts_proto
+    out: notification-service/src/generated
+    opt:
+      - outputServices=grpc-js
+      - esModuleInterop=true
+      - env=node
+      - useExactTypes=false
+  # Client stubs (+ message codecs) for the monolith.
+  - local: ./node_modules/.bin/protoc-gen-ts_proto
+    out: src/modules/shared/grpc/generated
+    opt:
+      - outputServices=grpc-js
+      - esModuleInterop=true
+      - env=node
+      - useExactTypes=false

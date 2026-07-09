@@ -8,6 +8,19 @@ export const findSentBySaga = async (db: Db, sagaId: string): Promise<boolean> =
     return (rowCount ?? 0) > 0;
 };
 
+export type NotificationRow = {
+    status: string;
+    recipient: string;
+};
+
+export const findBySaga = async (db: Db, sagaId: string): Promise<NotificationRow | null> => {
+    const { rows } = await db.query<NotificationRow>(
+        `SELECT status, recipient FROM notifications WHERE saga_id = $1`,
+        [sagaId],
+    );
+    return rows[0] ?? null;
+};
+
 export const recordSent = async (
     db: Db,
     sagaId: string,

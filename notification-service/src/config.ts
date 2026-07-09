@@ -4,6 +4,8 @@ export type ServiceConfig = {
     resendApiKey: string;
     smtpFrom: string;
     baseUrl: string;
+    grpcPort: number;
+    httpPort: number;
 };
 
 export const loadConfig = (): ServiceConfig => {
@@ -29,5 +31,7 @@ export const loadConfig = (): ServiceConfig => {
         resendApiKey: required.resendApiKey!,
         smtpFrom: required.smtpFrom!,
         baseUrl: required.baseUrl!,
+        grpcPort: Number(process.env.GRPC_PORT ?? 50051),
+        httpPort: Number(process.env.HTTP_PORT ?? 8080),
     };
 };

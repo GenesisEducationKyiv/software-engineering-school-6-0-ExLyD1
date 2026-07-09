@@ -1,41 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Db } from '../db.ts';
-import { findSentBySaga, recordSent } from '../notifications.repository.ts';
+import { findBySaga, findSentBySaga, recordSent } from '../notifications.repository.ts';
 
-function makeDb(rowCount: number | null = 1): Db {
-    return { query: vi.fn().mockResolvedValue({ rows: [], rowCount }) } as unknown as Db;
+function makeDb(rows: unknown[] = [], rowCount: number | null = rows.length): Db {
+    return { query: vi.fn().mockResolvedValue({ rows, rowCount }) } as unknown as Db;
 }
 
 beforeEach(() => {
     vi.clearAllMocks();
 });
 
-describe('findSentBySaga', () => {
-    it('returns true when a sent row exists for the saga', async () => {
-        const db = makeDb(1);
-        const result = await findSentBySaga(db, 's1');
+describe('findBySaga', () => {
+    it('returns the row when found and passes saga_id as param', async () => {
+        const db = makeDb([{ status: 'sent', recipient: 'user@example.com' }], 1);
+        const result = await findBySaga(db, 'saga-1');
 
-        expect(result).toBe(true);
+        expect(result).toEqual({ status: 'sent', recipient: 'user@example.com' });
         const [sql, params] = vi.mocked(db.query).mock.calls[0];
-        expect(sql).toContain("status = 'sent'");
-        expect(params).toEqual(['s1']);
+        expect(sql).toContain('FROM notifications WHERE saga_id');
+        expect(params).toEqual(['saga-1']);
     });
 
-    it('returns false when no sent row exists', async () => {
-        const db = makeDb(0);
-        const result = await findSentBySaga(db, 's1');
-        expect(result).toBe(false);
+    it('returns null when not found', async () => {
+        const db = makeDb([], 0);
+        expect(await findBySaga(db, 'ghost')).toBeNull();
     });
+});
 
-    it('returns false when rowCount is null', async () => {
-        const db = makeDb(null);
-        const result = await findSentBySaga(db, 's1');
-        expect(result).toBe(false);
+describe('findSentBySaga', () => {
+    it('true when a sent row exists, false otherwise', async () => {
+        expect(await findSentBySaga(makeDb([], 1), 's')).toBe(true);
+        expect(await findSentBySaga(makeDb([], 0), 's')).toBe(false);
+        expect(await findSentBySaga(makeDb([], null), 's')).toBe(false);
     });
 });
 
 describe('recordSent', () => {
-    it('inserts the notification with ON CONFLICT DO NOTHING (idempotent)', async () => {
+    it('inserts with ON CONFLICT DO NOTHING (idempotent)', async () => {
         const db = makeDb();
         await recordSent(db, 's1', 'confirmation', 'user@example.com');
 

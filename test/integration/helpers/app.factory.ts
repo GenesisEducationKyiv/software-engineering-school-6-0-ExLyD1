@@ -42,6 +42,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<F
         scannerIntervalMs: 9_999_999,
         port: 3000,
         logLevel: 'silent' as const,
+        notificationGrpcAddr: process.env.NOTIFICATION_GRPC_ADDR ?? '127.0.0.1:50051',
     };
 
     const fastify = Fastify({ logger: false });
