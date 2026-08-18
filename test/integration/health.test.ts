@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyPostgres from '@fastify/postgres';
 import { buildTestApp } from './helpers/app.factory.ts';
 import { truncateAllTables } from './helpers/db.helpers.ts';
-import healthRoutes from '../../src/controllers/health.ts';
+import healthRoutes from '../../src/modules/shared/health/health.controller.ts';
 
 let app: FastifyInstance;
 

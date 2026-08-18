@@ -1,16 +1,16 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { type Mock } from 'vitest';
 import fastifyPostgres from '@fastify/postgres';
-import authPlugin from '../../../src/plugins/auth.ts';
-import subscriptionRoutes from '../../../src/controllers/subscription.ts';
-import healthRoutes from '../../../src/controllers/health.ts';
+import authPlugin from '../../../src/modules/shared/auth/auth.plugin.ts';
+import subscriptionRoutes from '../../../src/modules/subscriptions/subscription.controller.ts';
+import healthRoutes from '../../../src/modules/shared/health/health.controller.ts';
 import { runMigrations } from '../../../src/database/migrate.ts';
-import { createGitHubClient } from '../../../src/clients/index.ts';
+import { createGitHubClient } from '../../../src/modules/shared/github/github.client.ts';
 import type {
     ConfirmationMailer,
-    GitHubClient,
     NotificationMailer,
-} from '../../../src/types/index.ts';
+} from '../../../src/modules/shared/mailer/mailer.types.ts';
+import type { GitHubClient } from '../../../src/modules/shared/github/github.types.ts';
 
 export type MockMailer = {
     sendConfirmationEmail: Mock;
@@ -38,9 +38,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<F
         databaseUrl: dbUrl,
         githubBaseUrl: process.env.GITHUB_BASE_URL ?? 'https://api.github.com',
         githubToken: process.env.GITHUB_TOKEN,
-        resendApiKey: 'test-key',
-        smtpFrom: 'test@example.com',
-        baseUrl: 'http://localhost:3000',
+        rabbitmqUrl: 'amqp://localhost:5672',
         scannerIntervalMs: 9_999_999,
         port: 3000,
         logLevel: 'silent' as const,
