@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>GitHub Notifier</title>
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: system-ui, sans-serif;
+                background: #f4f4f5;
+                color: #18181b;
+                padding: 2rem 1rem;
+            }
+
+            h1 {
+                text-align: center;
+                font-size: 1.5rem;
+                margin-bottom: 2rem;
+                color: #09090b;
+            }
+
+            .card {
+                background: #fff;
+                border: 1px solid #e4e4e7;
+                border-radius: 0.75rem;
+                padding: 1.5rem;
+                max-width: 480px;
+                margin: 0 auto 2rem;
+            }
+
+            .card h2 {
+                font-size: 1.1rem;
+                margin-bottom: 1.25rem;
+                color: #09090b;
+            }
+
+            label {
+                display: block;
+                font-size: 0.875rem;
+                font-weight: 500;
+                margin-bottom: 0.25rem;
+                color: #3f3f46;
+            }
+
+            input[type='email'],
+            input[type='text'] {
+                width: 100%;
+                padding: 0.5rem 0.75rem;
+                border: 1px solid #d4d4d8;
+                border-radius: 0.5rem;
+                font-size: 0.95rem;
+                margin-bottom: 0.875rem;
+                outline: none;
+                transition: border-color 0.15s;
+            }
+
+            input:focus {
+                border-color: #6366f1;
+            }
+
+            button {
+                width: 100%;
+                padding: 0.6rem 1rem;
+                background: #6366f1;
+                color: #fff;
+                border: none;
+                border-radius: 0.5rem;
+                font-size: 0.95rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background 0.15s;
+            }
+
+            button:hover {
+                background: #4f46e5;
+            }
+            button:disabled {
+                background: #a5b4fc;
+                cursor: not-allowed;
+            }
+
+            .message {
+                display: none;
+                margin-top: 0.875rem;
+                padding: 0.6rem 0.875rem;
+                border-radius: 0.5rem;
+                font-size: 0.875rem;
+            }
+
+            .message.success {
+                display: block;
+                background: #f0fdf4;
+                color: #15803d;
+                border: 1px solid #bbf7d0;
+            }
+            .message.error {
+                display: block;
+                background: #fef2f2;
+                color: #b91c1c;
+                border: 1px solid #fecaca;
+            }
+
+            .results {
+                margin-top: 1rem;
+            }
+
+            .results p {
+                font-size: 0.875rem;
+                color: #71717a;
+                text-align: center;
+            }
+
+            .sub-item {
+                border: 1px solid #e4e4e7;
+                border-radius: 0.5rem;
+                padding: 0.75rem 1rem;
+                margin-bottom: 0.625rem;
+                font-size: 0.875rem;
+            }
+
+            .sub-item strong {
+                display: block;
+                margin-bottom: 0.25rem;
+                color: #09090b;
+            }
+
+            .badge {
+                display: inline-block;
+                padding: 0.125rem 0.5rem;
+                border-radius: 9999px;
+                font-size: 0.75rem;
+                font-weight: 500;
+            }
+
+            .badge.confirmed {
+                background: #dcfce7;
+                color: #16a34a;
+            }
+            .badge.unconfirmed {
+                background: #fef9c3;
+                color: #a16207;
+            }
+
+            .field-error {
+                display: block;
+                font-size: 0.8rem;
+                color: #b91c1c;
+                margin-top: -0.625rem;
+                margin-bottom: 0.625rem;
+                min-height: 1em;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>GitHub Release Notifier</h1>
+
+        <!-- Section 1: Subscribe -->
+        <div class="card">
+            <h2>Subscribe to a repository</h2>
+            <form id="subscribe-form" novalidate>
+                <label for="sub-email">Email</label>
+                <input id="sub-email" type="email" placeholder="you@example.com" required />
+                <span class="field-error" id="sub-email-error"></span>
+
+                <label for="sub-repo">Repository</label>
+                <input id="sub-repo" type="text" placeholder="golang/go" required />
+                <span class="field-error" id="sub-repo-error"></span>
+
+                <button type="submit" id="sub-btn">Subscribe</button>
+            </form>
+            <div id="sub-message" class="message"></div>
+        </div>
+
+        <!-- Section 2: My Subscriptions -->
+        <div class="card">
+            <h2>My subscriptions</h2>
+            <form id="lookup-form" novalidate>
+                <label for="lookup-email">Email</label>
+                <input id="lookup-email" type="email" placeholder="you@example.com" required />
+                <span class="field-error" id="lookup-email-error"></span>
+
+                <button type="submit" id="lookup-btn">Look up</button>
+            </form>
+            <div id="lookup-results" class="results"></div>
+        </div>
+
+        <!-- Section 3: Scripts -->
+        <script>
+            const REPO_REGEX = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+            const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            function showFieldError(id, message) {
+                const el = document.getElementById(id);
+                el.textContent = message;
+            }
+
+            function clearFieldError(id) {
+                const el = document.getElementById(id);
+                el.textContent = '';
+            }
+
+            // Clear field errors as the user corrects input
+            document
+                .getElementById('sub-email')
+                .addEventListener('input', () => clearFieldError('sub-email-error'));
+            document
+                .getElementById('sub-repo')
+                .addEventListener('input', () => clearFieldError('sub-repo-error'));
+            document
+                .getElementById('lookup-email')
+                .addEventListener('input', () => clearFieldError('lookup-email-error'));
+
+            // Subscribe form
+            document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const email = document.getElementById('sub-email').value.trim();
+                const repo = document.getElementById('sub-repo').value.trim();
+                const btn = document.getElementById('sub-btn');
+                const msg = document.getElementById('sub-message');
+
+                // Client-side validation — must pass before any API call
+                let valid = true;
+                if (!EMAIL_REGEX.test(email)) {
+                    showFieldError('sub-email-error', 'Enter a valid email address.');
+                    valid = false;
+                }
+                if (!REPO_REGEX.test(repo)) {
+                    showFieldError(
+                        'sub-repo-error',
+                        'Enter a repository in owner/repo format (e.g. golang/go).',
+                    );
+                    valid = false;
+                }
+                if (!valid) return;
+
+                btn.disabled = true;
+                msg.className = 'message';
+                msg.textContent = '';
+
+                try {
+                    const res = await fetch('/api/subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, repo }),
+                    });
+
+                    switch (res.status) {
+                        case 200:
+                            msg.className = 'message success';
+                            msg.textContent = 'Subscribed! Check your email to confirm.';
+                            break;
+                        case 400:
+                            msg.className = 'message error';
+                            msg.textContent =
+                                'Invalid email or repository format (e.g. owner/repo).';
+                            break;
+                        case 404:
+                            msg.className = 'message error';
+                            msg.textContent = 'Repository not found on GitHub.';
+                            break;
+                        case 409:
+                            msg.className = 'message error';
+                            msg.textContent =
+                                'This email is already subscribed to that repository.';
+                            break;
+                        // My custom decision
+                        case 429:
+                            msg.className = 'message error';
+                            msg.textContent =
+                                'Too many requests. Please wait a few minutes and try again.';
+                            break;
+                        default:
+                            msg.className = 'message error';
+                            msg.textContent = `Unexpected error (HTTP ${res.status}). Please try again.`;
+                    }
+                } catch {
+                    msg.className = 'message error';
+                    msg.textContent = 'Network error — could not reach the server.';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+
+            // Subscriptions lookup form
+            document.getElementById('lookup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const email = document.getElementById('lookup-email').value.trim();
+                const btn = document.getElementById('lookup-btn');
+                const results = document.getElementById('lookup-results');
+
+                // Client-side validation — must pass before any API call
+                if (!EMAIL_REGEX.test(email)) {
+                    showFieldError('lookup-email-error', 'Enter a valid email address.');
+                    return;
+                }
+
+                btn.disabled = true;
+                results.innerHTML = '';
+
+                try {
+                    const res = await fetch(
+                        `/api/subscriptions?email=${encodeURIComponent(email)}`,
+                    );
+
+                    if (res.status === 400) {
+                        results.innerHTML = '<p style="color:#b91c1c">Invalid email format.</p>';
+                        return;
+                    }
+
+                    if (!res.ok) {
+                        results.innerHTML = `<p style="color:#b91c1c">Error (HTTP ${res.status}).</p>`;
+                        return;
+                    }
+
+                    const items = await res.json();
+
+                    if (items.length === 0) {
+                        results.innerHTML = '<p>No subscriptions found for this email.</p>';
+                        return;
+                    }
+
+                    results.innerHTML = items
+                        .map(
+                            (s) => `
+                    <div class="sub-item">
+                        <strong>${s.repo}</strong>
+                        <span class="badge ${s.confirmed ? 'confirmed' : 'unconfirmed'}">
+                            ${s.confirmed ? 'Confirmed' : 'Pending confirmation'}
+                        </span>
+                        ${s.last_seen_tag ? `<div style="margin-top:0.25rem;color:#52525b;font-size:0.8rem">Last notified: ${s.last_seen_tag}</div>` : ''}
+                    </div>
+                `,
+                        )
+                        .join('');
+                } catch {
+                    results.innerHTML =
+                        '<p style="color:#b91c1c">Network error — could not reach the server.</p>';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        </script>
+    </body>
+</html>

@@ -1,0 +1,142 @@
+services:
+    postgres:
+        image: postgres:16-alpine
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U postgres -d github_notifier_genesis']
+            interval: 5s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
+    app:
+        build: .
+        restart: on-failure
+        env_file: .env
+        environment:
+            DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+            PORT: 3000
+            API_KEY: ${API_KEY}
+            RABBITMQ_URL: amqp://rabbitmq:5672
+        ports:
+            - '3000:3000'
+        depends_on:
+            postgres:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+            logstash:
+                condition: service_started
+        logging:
+            driver: gelf
+            options:
+                gelf-address: 'udp://127.0.0.1:12201'
+
+    rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        ports:
+            - '5672:5672'
+            - '15672:15672'
+        volumes:
+            - rabbitmq_data:/var/lib/rabbitmq
+        healthcheck:
+            test: ['CMD', 'rabbitmq-diagnostics', 'check_port_connectivity']
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s
+
+    notification:
+        build: ./notification-service
+        restart: on-failure
+        env_file: .env
+        environment:
+            RABBITMQ_URL: amqp://rabbitmq:5672
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+            logstash:
+                condition: service_healthy
+        logging:
+            driver: gelf
+            options:
+                gelf-address: 'udp://127.0.0.1:12201'
+
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+        environment:
+            discovery.type: single-node
+            xpack.security.enabled: 'false'
+            ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+        ports:
+            - '9200:9200'
+        volumes:
+            - es_data:/usr/share/elasticsearch/data
+        healthcheck:
+            test: ['CMD-SHELL', 'curl -fs http://localhost:9200/_cluster/health || exit 1']
+            interval: 10s
+            timeout: 10s
+            retries: 12
+            start_period: 60s
+
+    logstash:
+        image: docker.elastic.co/logstash/logstash:8.15.3
+        environment:
+            LS_JAVA_OPTS: '-Xms256m -Xmx256m'
+            XPACK_MONITORING_ENABLED: 'false'
+        volumes:
+            - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+        ports:
+            - '12201:12201/udp'
+        depends_on:
+            elasticsearch:
+                condition: service_healthy
+        healthcheck:
+            test: ['CMD-SHELL', 'curl -fs http://localhost:9600 || exit 1']
+            interval: 10s
+            timeout: 5s
+            retries: 12
+            start_period: 60s
+
+    kibana:
+        image: docker.elastic.co/kibana/kibana:8.15.3
+        environment:
+            ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+        ports:
+            - '5601:5601'
+        depends_on:
+            elasticsearch:
+                condition: service_healthy
+
+    prometheus:
+        image: prom/prometheus:v2.53.0
+        volumes:
+            - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+        ports:
+            - '9090:9090'
+        depends_on:
+            - app
+
+    grafana:
+        image: grafana/grafana:11.2.0
+        environment:
+            GF_SECURITY_ADMIN_USER: admin
+            GF_SECURITY_ADMIN_PASSWORD: admin
+            GF_USERS_ALLOW_SIGN_UP: 'false'
+        volumes:
+            - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+            - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+        ports:
+            - '3001:3000'
+        depends_on:
+            - prometheus
+
+volumes:
+    postgres_data:
+    es_data:
+    rabbitmq_data:
